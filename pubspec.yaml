@@ -1,0 +1,22 @@
+name: kutral_ko
+description: Aplicacion movil para administrar consumos, pagos y saldos mensuales de restobares.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  intl: ^0.20.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/brand/kutral_ko_logo_refined.png
