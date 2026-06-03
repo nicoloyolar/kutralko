@@ -3,6 +3,7 @@
 ## Estado Actual
 
 Estamos en la base inicial de la app movil. Ya existe un proyecto Flutter fuente con interfaz inicial, entidades de dominio, datos mock, paleta visual basada en el logo y pruebas basicas.
+Actualizacion 2026-06-03: la app ya arranca sin datos mock para permitir carga real desde UI. La capa Firebase/Firestore ya esta preparada en codigo y `android/app/google-services.json` fue agregado desde el proyecto Firebase real.
 
 Repositorio local activo:
 
@@ -11,7 +12,7 @@ Repositorio local activo:
 Estado Git actual:
 
 - Rama local: `master`
-- Commits: pendiente primer commit
+- Commits: primer commit base creado (`1083c2c chore: estado base inicial`)
 - Remoto: no configurado
 
 ## Objetivo Del Producto
@@ -26,6 +27,8 @@ La app debe permitir:
 - Registrar pagos o abonos manuales.
 - Calcular saldo como consumos activos menos pagos activos.
 - Anular movimientos sin perder trazabilidad.
+- Usar perfiles diferenciados: administrador/dueño del bar y cliente.
+- Compartir una fuente de verdad entre administrador y cliente.
 - Prepararse para un futuro panel administrativo vendible.
 
 ## Reglas De Arquitectura
@@ -36,6 +39,7 @@ La app debe permitir:
 - Saldos calculados desde movimientos, no guardados como fuente principal.
 - Separar features por dominio: usuarios, productos, consumos, pagos, dashboard, configuracion.
 - Mantener UI premium, sobria y rapida para uso diario en local.
+- Formato monetario chileno: `$` a la izquierda y separador de miles con punto.
 
 ## Iteracion 1 - Base Movil Premium
 
@@ -53,56 +57,78 @@ Incluye:
 
 Pendiente de esta iteracion:
 
-- Generar runners reales de Flutter: `android/`, `ios/`, `web/`.
-- Crear primer commit Git.
+- Generar runners reales de Flutter: `android/` creado; `ios/` y `web/` pendientes.
+- Crear primer commit Git. Hecho: `1083c2c chore: estado base inicial`.
 - Definir si el nombre de carpeta queda como `kutral_ko` o si usamos otro nombre comercial.
+- Branding Android: icono launcher y splash screen usando logo Kutral Ko. Hecho inicial.
+
+Nota 2026-06-03: se intento generar runners con
+`flutter create --platforms=android,ios,web --project-name kutral_ko --org com.kutralko .`,
+pero el comando quedo bloqueado sin salida y no escribio carpetas de plataforma. `flutter doctor -v`
+responde correctamente; quedan pendientes cmdline-tools/licencias Android y reintentar generacion.
+Luego se genero correctamente el runner Android con
+`flutter create --platforms=android --project-name kutral_ko --org com.kutralko .`.
+La app compila e instala en el emulador `emulator-5554`.
 
 ## Iteracion 2 - Formularios y Edicion
 
-Estado: pendiente.
+Estado: en progreso.
 
 Objetivo: convertir la maqueta funcional en una app editable.
 
 Tareas:
 
-- Crear formulario de usuario.
-- Editar usuario existente.
-- Activar/desactivar usuario.
-- Crear formulario de producto.
-- Editar producto existente.
-- Activar/desactivar producto.
-- Crear formulario de consumo.
-- Crear formulario de pago/abono.
-- Agregar validaciones visuales.
-- Agregar estados vacios profesionales.
+- Crear formulario de usuario. Hecho inicial en memoria.
+- Editar usuario existente. Hecho inicial en memoria.
+- Activar/desactivar usuario. Hecho inicial en memoria.
+- Crear formulario de producto. Hecho inicial en memoria.
+- Editar producto existente. Hecho inicial en memoria.
+- Activar/desactivar producto. Hecho inicial en memoria.
+- Crear formulario de consumo. Hecho inicial en memoria.
+- Crear formulario de pago/abono. Hecho inicial en memoria.
+- Agregar validaciones visuales. Hecho inicial para campos requeridos y montos/cantidades.
+- Agregar estados vacios profesionales. Hecho inicial.
+- Separar estado editable en repositorios/controladores cuando empiece persistencia local.
+- Agregar persistencia remota compartida. En progreso: Firebase Auth + Cloud Firestore agregados al proyecto Flutter.
+- Reemplazar selector local Admin/Cliente por autenticacion real y permisos por rol. En progreso: login/registro email-password creado; perfiles se guardan en `perfiles/{uid}`.
 
 Criterio de exito:
 
 - Se puede crear y editar usuarios/productos desde la app.
 - Se puede simular un consumo y un pago desde acciones reales de UI.
 
-## Iteracion 3 - Persistencia Local
+## Iteracion 3 - Persistencia Compartida
 
 Estado: pendiente.
 
-Objetivo: guardar datos reales en el dispositivo.
+Objetivo: guardar datos reales y compartir una fuente de verdad entre administrador y cliente.
 
 Stack propuesto:
 
-- Drift + SQLite para persistencia local.
+- Firebase Auth para perfiles administrador/cliente.
+- Cloud Firestore para usuarios, productos, consumos y pagos compartidos.
+- Reglas de seguridad por rol.
+- Drift + SQLite opcional mas adelante para cache/offline avanzado.
 - Repositorios por feature.
-- Migraciones controladas.
+- Migraciones/control de esquema.
 
 Tareas:
 
-- Agregar Drift.
+- Crear proyecto Firebase. Hecho manualmente desde Firebase Console.
+- Agregar `google-services.json` para Android. Hecho.
+- Agregar `firebase_core`, `firebase_auth`, `cloud_firestore`. Hecho.
+- Inicializar Firebase en `main.dart`. Hecho.
+- Configurar plugin Android `com.google.gms.google-services`. Hecho.
+- Implementar repositorio Firestore para `usuarios`, `productos`, `consumos`, `pagos`. Hecho inicial.
+- Modelar roles: administrador y cliente. Hecho inicial en registro (`perfiles/{uid}.rolPerfil`).
 - Definir tablas `usuarios`, `productos`, `consumos`, `pagos`, `categorias`.
 - Implementar DAOs o repositorios.
-- Reemplazar datos mock por consultas reales.
+- Reemplazar estado en memoria por consultas reales.
 - Crear seed inicial opcional.
 
 Criterio de exito:
 
+- Administrador y cliente ven la misma fuente de verdad.
 - La app conserva usuarios, productos, consumos y pagos al cerrarse y abrirse.
 
 ## Iteracion 4 - Flujo Diario Del Local
@@ -204,6 +230,7 @@ Tareas futuras:
 Antes de seguir desarrollando conviene resolver:
 
 1. Abrir `C:\Users\FULLUNLOCK\AndroidStudioProjects\kutral_ko` como proyecto principal.
-2. Generar runners Flutter si Android Studio no los genera automaticamente.
-3. Crear primer commit.
-4. Empezar Iteracion 2 con formularios de usuario y producto.
+2. Generar runners restantes (`ios/`, `web/`) cuando sean necesarios.
+3. Definir y aplicar reglas Firestore para perfiles administrador/cliente.
+4. Definir nombre comercial/carpeta.
+5. Continuar Iteracion 2 con detalle de usuario, anulaciones editables y preparacion para repositorios.
