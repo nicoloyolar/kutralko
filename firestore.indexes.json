@@ -1,0 +1,33 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "consumos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "idUsuario",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaConsumo",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "pagos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "idUsuario",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaPago",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

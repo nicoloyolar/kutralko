@@ -4,6 +4,7 @@
 
 Estamos en la base inicial de la app movil. Ya existe un proyecto Flutter fuente con interfaz inicial, entidades de dominio, datos mock, paleta visual basada en el logo y pruebas basicas.
 Actualizacion 2026-06-03: la app ya arranca sin datos mock para permitir carga real desde UI. La capa Firebase/Firestore ya esta preparada en codigo y `android/app/google-services.json` fue agregado desde el proyecto Firebase real.
+Actualizacion 2026-06-05: se inicio pulido de producto con lenguaje visible menos tecnico, estetica mas negra/dorada y flujo de "Nueva carga" para agregar varios productos a un mismo cliente antes de guardar. La vista de movimientos ahora muestra nombres de cliente y mezcla consumos/pagos por fecha. Los clientes ya abren un detalle con resumen, historial propio y acciones rapidas preseleccionadas. Se agrego anulacion de consumos/pagos con confirmacion, manteniendo trazabilidad y recalculo de saldos. Luego se reemplazo el selector local por roles reales desde `perfiles/{uid}`, se agrego filtro mensual, edicion de consumos/pagos, reglas Firestore versionadas, indices para consultas por cliente, auditoria basica y vinculacion admin de perfil-cliente.
 
 Repositorio local activo:
 
@@ -40,6 +41,8 @@ La app debe permitir:
 - Separar features por dominio: usuarios, productos, consumos, pagos, dashboard, configuracion.
 - Mantener UI premium, sobria y rapida para uso diario en local.
 - Formato monetario chileno: `$` a la izquierda y separador de miles con punto.
+- En UI visible, usar lenguaje humano y operativo; reservar nombres tecnicos como `nombreProducto` o `idUsuario` para codigo, Firestore y documentacion tecnica.
+- Para el flujo diario, priorizar acciones de baja friccion: seleccionar cliente una vez, cargar varios productos, revisar total y confirmar.
 
 ## Iteracion 1 - Base Movil Premium
 
@@ -85,21 +88,35 @@ Tareas:
 - Editar producto existente. Hecho inicial en memoria.
 - Activar/desactivar producto. Hecho inicial en memoria.
 - Crear formulario de consumo. Hecho inicial en memoria.
+- Mejorar formulario de consumo para cargar varios productos a un cliente en una sola confirmacion. Hecho inicial: la UI arma una "Nueva carga" y guarda cada producto como un `Consumo` individual para mantener compatibilidad con el modelo actual.
 - Crear formulario de pago/abono. Hecho inicial en memoria.
 - Agregar validaciones visuales. Hecho inicial para campos requeridos y montos/cantidades.
 - Agregar estados vacios profesionales. Hecho inicial.
+- Reemplazar labels tecnicos visibles por textos de producto. Hecho inicial: campos como `nombreProducto`, `idUsuario`, `montoPago` pasaron a etiquetas humanas.
+- Elevar estetica negro/dorado premium. Hecho inicial: app bar y navegacion inferior en carbon oscuro con acentos dorados.
+- Mejorar legibilidad de movimientos. Hecho inicial: consumos y pagos se muestran en una sola lista ordenada por fecha y con nombre de cliente resuelto desde `usuarios`.
+- Crear detalle de cliente. Hecho inicial: tocar un cliente abre una hoja con saldo, total consumido, total abonado, historial propio y acciones rapidas para cargar consumo o pago con cliente preseleccionado.
+- Anular consumos y pagos desde historiales. Hecho inicial: la accion pide confirmacion, marca el movimiento como anulado, lo mantiene visible y deja de afectar el saldo.
+- Editar consumos y pagos desde historiales. Hecho inicial: se conservan id/fecha/anulacion y se actualizan datos operativos.
+- Filtro mensual. Hecho inicial: el balance, clientes, historial general y detalle de cliente usan el mes seleccionado.
 - Separar estado editable en repositorios/controladores cuando empiece persistencia local.
 - Agregar persistencia remota compartida. En progreso: Firebase Auth + Cloud Firestore agregados al proyecto Flutter.
-- Reemplazar selector local Admin/Cliente por autenticacion real y permisos por rol. En progreso: login/registro email-password creado; perfiles se guardan en `perfiles/{uid}`.
+- Reemplazar selector local Admin/Cliente por autenticacion real y permisos por rol. Hecho inicial: dashboard lee `perfiles/{uid}.rolPerfil`; nuevas cuentas parten como cliente.
+- Privacidad real por cliente. Hecho inicial: el repositorio consulta `usuarios`, `consumos` y `pagos` por `idUsuarioPerfil` cuando el perfil es cliente.
 
 Criterio de exito:
 
 - Se puede crear y editar usuarios/productos desde la app.
 - Se puede simular un consumo y un pago desde acciones reales de UI.
+- Se puede cargar mas de un producto para el mismo cliente sin repetir todo el flujo.
+- Se puede abrir un cliente y operar desde su detalle sin perder contexto.
+- Se puede anular un consumo o pago sin borrar su registro.
+- Se puede filtrar por mes y editar movimientos activos.
+- El cliente vinculado no descarga movimientos de otros clientes.
 
 ## Iteracion 3 - Persistencia Compartida
 
-Estado: pendiente.
+Estado: en progreso.
 
 Objetivo: guardar datos reales y compartir una fuente de verdad entre administrador y cliente.
 
@@ -121,6 +138,10 @@ Tareas:
 - Configurar plugin Android `com.google.gms.google-services`. Hecho.
 - Implementar repositorio Firestore para `usuarios`, `productos`, `consumos`, `pagos`. Hecho inicial.
 - Modelar roles: administrador y cliente. Hecho inicial en registro (`perfiles/{uid}.rolPerfil`).
+- Leer roles reales desde `perfiles/{uid}` en dashboard. Hecho.
+- Agregar reglas Firestore versionadas. Hecho inicial en `firestore.rules`; bloquean escrituras a no administradores, deshabilitan borrado y restringen lectura de usuarios/movimientos al cliente vinculado.
+- Agregar indices Firestore para consultas por cliente. Hecho en `firestore.indexes.json`.
+- Vincular perfiles cliente a `usuarios` con `idUsuarioPerfil`. Hecho inicial desde configuracion admin.
 - Definir tablas `usuarios`, `productos`, `consumos`, `pagos`, `categorias`.
 - Implementar DAOs o repositorios.
 - Reemplazar estado en memoria por consultas reales.
@@ -140,11 +161,14 @@ Objetivo: que el administrador pueda usar la app en operacion real.
 Tareas:
 
 - Flujo rapido: seleccionar usuario -> agregar consumo -> confirmar.
+- Flujo rapido: seleccionar usuario -> agregar varios productos -> revisar total -> confirmar. Hecho inicial en Iteracion 2 como "Nueva carga".
 - Flujo rapido: seleccionar usuario -> registrar pago -> confirmar.
-- Detalle de usuario con historial mixto de consumos y pagos.
-- Filtros por mes.
-- Edicion/anulacion de consumo.
-- Edicion/anulacion de pago.
+- Detalle de usuario con historial mixto de consumos y pagos. Hecho inicial como hoja inferior desde Inicio/Clientes.
+- Historial general mixto de consumos y pagos con nombre de cliente. Hecho inicial en vista "Cuenta mensual".
+- Filtros por mes. Hecho inicial desde balance principal.
+- Edicion/anulacion de consumo. Hecho inicial.
+- Edicion/anulacion de pago. Hecho inicial.
+- Auditoria basica de ediciones/anulaciones. Hecho inicial en coleccion `auditoria`.
 
 Criterio de exito:
 

@@ -16,4 +16,24 @@ class Pago {
   final DateTime fechaPago;
   final String notaPago;
   final bool estaAnuladoPago;
+
+  Pago copyWith({
+    String? idPago,
+    String? idUsuario,
+    int? montoPago,
+    String? metodoPago,
+    DateTime? fechaPago,
+    String? notaPago,
+    bool? estaAnuladoPago,
+  }) {
+    return Pago(
+      idPago: idPago ?? this.idPago,
+      idUsuario: idUsuario ?? this.idUsuario,
+      montoPago: montoPago ?? this.montoPago,
+      metodoPago: metodoPago ?? this.metodoPago,
+      fechaPago: fechaPago ?? this.fechaPago,
+      notaPago: notaPago ?? this.notaPago,
+      estaAnuladoPago: estaAnuladoPago ?? this.estaAnuladoPago,
+    );
+  }
 }

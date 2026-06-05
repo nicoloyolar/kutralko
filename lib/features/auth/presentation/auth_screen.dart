@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme.dart';
 
-enum PerfilRegistro { administrador, cliente }
-
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
 
@@ -18,7 +16,6 @@ class _AuthScreenState extends State<AuthScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  PerfilRegistro _perfilRegistro = PerfilRegistro.administrador;
   bool _isRegistering = false;
   bool _isLoading = false;
   bool _showPassword = false;
@@ -82,7 +79,7 @@ class _AuthScreenState extends State<AuthScreen> {
     return FirebaseFirestore.instance.collection('perfiles').doc(user.uid).set({
       'idPerfil': user.uid,
       'emailPerfil': email,
-      'rolPerfil': _perfilRegistro.name,
+      'rolPerfil': 'cliente',
       'fechaCreacionPerfil': FieldValue.serverTimestamp(),
       'estaActivoPerfil': true,
     }, SetOptions(merge: true));
@@ -156,31 +153,14 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                       const SizedBox(height: 16),
                       if (_isRegistering) ...[
-                        SegmentedButton<PerfilRegistro>(
-                          segments: const [
-                            ButtonSegment(
-                              value: PerfilRegistro.administrador,
-                              icon: Icon(Icons.admin_panel_settings_rounded),
-                              label: Text('Admin'),
-                            ),
-                            ButtonSegment(
-                              value: PerfilRegistro.cliente,
-                              icon: Icon(Icons.person_rounded),
-                              label: Text('Cliente'),
-                            ),
-                          ],
-                          selected: {_perfilRegistro},
-                          onSelectionChanged: (values) {
-                            setState(() => _perfilRegistro = values.first);
-                          },
-                          showSelectedIcon: false,
-                        ),
+                        const _ClientRegistrationNotice(),
                         const SizedBox(height: 16),
                       ],
                       TextFormField(
                         controller: _emailController,
                         decoration: const InputDecoration(
-                          labelText: 'emailPerfil',
+                          labelText: 'Correo electronico',
+                          hintText: 'Ingrese su correo',
                           prefixIcon: Icon(Icons.mail_rounded),
                         ),
                         keyboardType: TextInputType.emailAddress,
@@ -199,7 +179,8 @@ class _AuthScreenState extends State<AuthScreen> {
                       TextFormField(
                         controller: _passwordController,
                         decoration: InputDecoration(
-                          labelText: 'contrasenaPerfil',
+                          labelText: 'Contrasena',
+                          hintText: 'Ingrese su contrasena',
                           prefixIcon: const Icon(Icons.lock_rounded),
                           suffixIcon: IconButton(
                             tooltip: _showPassword ? 'Ocultar' : 'Mostrar',
@@ -255,6 +236,36 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ClientRegistrationNotice extends StatelessWidget {
+  const _ClientRegistrationNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: KutralKoColors.smoke.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.verified_user_rounded, color: KutralKoColors.gold),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Las cuentas nuevas parten como cliente. Un administrador puede habilitar permisos despues.',
+              style: TextStyle(
+                color: KutralKoColors.ink,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

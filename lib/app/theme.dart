@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 class KutralKoColors {
   const KutralKoColors._();
 
-  static const carbon = Color(0xFF141210);
-  static const ink = Color(0xFF24201C);
-  static const smoke = Color(0xFFEEE8DF);
-  static const ivory = Color(0xFFFFFAF2);
+  static const carbon = Color(0xFF080706);
+  static const ink = Color(0xFF18130E);
+  static const smoke = Color(0xFFE9DDC7);
+  static const ivory = Color(0xFFFFF8EA);
   static const panel = Color(0xFFFFFFFF);
-  static const gold = Color(0xFFC99A3A);
-  static const amber = Color(0xFFE1A12F);
+  static const gold = Color(0xFFD6A947);
+  static const amber = Color(0xFFF0B646);
   static const orange = Color(0xFFE56625);
   static const ember = Color(0xFFB83A1E);
   static const teal = Color(0xFF1A8B91);
@@ -33,17 +33,29 @@ class KutralKoTheme {
       scaffoldBackgroundColor: KutralKoColors.ivory,
       fontFamily: 'Roboto',
       appBarTheme: const AppBarTheme(
-        backgroundColor: KutralKoColors.ivory,
-        foregroundColor: KutralKoColors.carbon,
+        backgroundColor: KutralKoColors.carbon,
+        surfaceTintColor: KutralKoColors.carbon,
+        foregroundColor: KutralKoColors.ivory,
         elevation: 0,
         centerTitle: false,
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: KutralKoColors.panel,
-        indicatorColor: KutralKoColors.smoke,
-        labelTextStyle: WidgetStateProperty.all(
-          const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-        ),
+        backgroundColor: KutralKoColors.carbon,
+        indicatorColor: KutralKoColors.gold.withValues(alpha: 0.2),
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          final isSelected = states.contains(WidgetState.selected);
+          return TextStyle(
+            color: isSelected ? KutralKoColors.gold : KutralKoColors.smoke,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          );
+        }),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          final isSelected = states.contains(WidgetState.selected);
+          return IconThemeData(
+            color: isSelected ? KutralKoColors.gold : KutralKoColors.smoke,
+          );
+        }),
       ),
       cardTheme: const CardThemeData(
         color: KutralKoColors.panel,

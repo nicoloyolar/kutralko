@@ -1,0 +1,80 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profile() {
+      return get(/databases/$(database)/documents/perfiles/$(request.auth.uid));
+    }
+
+    function isActive() {
+      return signedIn() &&
+        profile().data.estaActivoPerfil == true;
+    }
+
+    function isAdmin() {
+      return isActive() &&
+        profile().data.rolPerfil == 'administrador';
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function linkedUserId() {
+      return profile().data.idUsuarioPerfil;
+    }
+
+    function isLinkedUser(idUsuario) {
+      return isActive() &&
+        linkedUserId() is string &&
+        linkedUserId() == idUsuario;
+    }
+
+    function validClientProfile(uid) {
+      return request.resource.data.idPerfil == uid &&
+        request.resource.data.emailPerfil is string &&
+        request.resource.data.rolPerfil == 'cliente' &&
+        request.resource.data.estaActivoPerfil == true;
+    }
+
+    match /perfiles/{uid} {
+      allow read: if isSelf(uid) || isAdmin();
+      allow create: if isSelf(uid) && validClientProfile(uid);
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /usuarios/{document} {
+      allow read: if isAdmin() || isLinkedUser(document);
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /productos/{document} {
+      allow read: if isActive();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /consumos/{document} {
+      allow read: if isAdmin() || isLinkedUser(resource.data.idUsuario);
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /pagos/{document} {
+      allow read: if isAdmin() || isLinkedUser(resource.data.idUsuario);
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /auditoria/{document} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+  }
+}

@@ -22,4 +22,30 @@ class Consumo {
   final bool estaAnuladoConsumo;
 
   int get totalConsumo => precioProductoSnapshot * cantidadConsumo;
+
+  Consumo copyWith({
+    String? idConsumo,
+    String? idUsuario,
+    String? idProducto,
+    String? nombreProductoSnapshot,
+    int? precioProductoSnapshot,
+    int? cantidadConsumo,
+    DateTime? fechaConsumo,
+    String? notaConsumo,
+    bool? estaAnuladoConsumo,
+  }) {
+    return Consumo(
+      idConsumo: idConsumo ?? this.idConsumo,
+      idUsuario: idUsuario ?? this.idUsuario,
+      idProducto: idProducto ?? this.idProducto,
+      nombreProductoSnapshot:
+          nombreProductoSnapshot ?? this.nombreProductoSnapshot,
+      precioProductoSnapshot:
+          precioProductoSnapshot ?? this.precioProductoSnapshot,
+      cantidadConsumo: cantidadConsumo ?? this.cantidadConsumo,
+      fechaConsumo: fechaConsumo ?? this.fechaConsumo,
+      notaConsumo: notaConsumo ?? this.notaConsumo,
+      estaAnuladoConsumo: estaAnuladoConsumo ?? this.estaAnuladoConsumo,
+    );
+  }
 }

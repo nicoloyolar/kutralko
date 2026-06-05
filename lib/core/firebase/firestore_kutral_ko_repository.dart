@@ -20,9 +20,20 @@ class FirestoreKutralKoRepository implements KutralKoRepository {
       _firestore.collection('consumos');
   CollectionReference<Map<String, dynamic>> get _pagos =>
       _firestore.collection('pagos');
+  CollectionReference<Map<String, dynamic>> get _auditoria =>
+      _firestore.collection('auditoria');
 
   @override
-  Stream<List<Usuario>> watchUsuarios() {
+  Stream<List<Usuario>> watchUsuarios({String? idUsuario}) {
+    if (idUsuario != null && idUsuario.isNotEmpty) {
+      return _usuarios.doc(idUsuario).snapshots().map((doc) {
+        if (!doc.exists) {
+          return const <Usuario>[];
+        }
+        return [_usuarioFromDoc(doc)];
+      });
+    }
+
     return _usuarios
         .orderBy('nombreUsuario')
         .snapshots()
@@ -38,16 +49,26 @@ class FirestoreKutralKoRepository implements KutralKoRepository {
   }
 
   @override
-  Stream<List<Consumo>> watchConsumos() {
-    return _consumos
+  Stream<List<Consumo>> watchConsumos({String? idUsuario}) {
+    Query<Map<String, dynamic>> query = _consumos;
+    if (idUsuario != null && idUsuario.isNotEmpty) {
+      query = query.where('idUsuario', isEqualTo: idUsuario);
+    }
+
+    return query
         .orderBy('fechaConsumo', descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs.map(_consumoFromDoc).toList());
   }
 
   @override
-  Stream<List<Pago>> watchPagos() {
-    return _pagos
+  Stream<List<Pago>> watchPagos({String? idUsuario}) {
+    Query<Map<String, dynamic>> query = _pagos;
+    if (idUsuario != null && idUsuario.isNotEmpty) {
+      query = query.where('idUsuario', isEqualTo: idUsuario);
+    }
+
+    return query
         .orderBy('fechaPago', descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs.map(_pagoFromDoc).toList());
@@ -84,6 +105,14 @@ class FirestoreKutralKoRepository implements KutralKoRepository {
   Future<void> guardarPago(Pago pago) {
     final doc = pago.idPago.isEmpty ? _pagos.doc() : _pagos.doc(pago.idPago);
     return doc.set(_pagoToMap(pago.copyWith(idPago: doc.id)));
+  }
+
+  @override
+  Future<void> registrarAuditoria(Map<String, dynamic> auditoria) {
+    return _auditoria.add({
+      ...auditoria,
+      'fechaAuditoria': FieldValue.serverTimestamp(),
+    });
   }
 }
 
@@ -185,34 +214,4 @@ Map<String, dynamic> _pagoToMap(Pago pago) {
     'notaPago': pago.notaPago,
     'estaAnuladoPago': pago.estaAnuladoPago,
   };
-}
-
-extension on Consumo {
-  Consumo copyWith({String? idConsumo}) {
-    return Consumo(
-      idConsumo: idConsumo ?? this.idConsumo,
-      idUsuario: idUsuario,
-      idProducto: idProducto,
-      nombreProductoSnapshot: nombreProductoSnapshot,
-      precioProductoSnapshot: precioProductoSnapshot,
-      cantidadConsumo: cantidadConsumo,
-      fechaConsumo: fechaConsumo,
-      notaConsumo: notaConsumo,
-      estaAnuladoConsumo: estaAnuladoConsumo,
-    );
-  }
-}
-
-extension on Pago {
-  Pago copyWith({String? idPago}) {
-    return Pago(
-      idPago: idPago ?? this.idPago,
-      idUsuario: idUsuario,
-      montoPago: montoPago,
-      metodoPago: metodoPago,
-      fechaPago: fechaPago,
-      notaPago: notaPago,
-      estaAnuladoPago: estaAnuladoPago,
-    );
-  }
 }
