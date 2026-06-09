@@ -4,6 +4,7 @@ import 'package:excel/excel.dart' as xlsx;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -18,6 +19,39 @@ import '../../personal/domain/consumo_personal.dart';
 import '../../personal/domain/trabajador.dart';
 import '../../productos/domain/producto.dart';
 import '../../usuarios/domain/usuario.dart';
+
+const _categoriasProducto = [
+  'Comidas',
+  'Tragos',
+  'Cervezas',
+  'Vinos',
+  'Bebidas',
+  'Cafeteria',
+  'Postres',
+  'Promociones',
+  'Otros',
+];
+
+const _tiposTrabajador = [
+  'Administracion',
+  'Barra',
+  'Cocina',
+  'Garzon',
+  'Caja',
+  'Anfitrion',
+  'Aseo',
+  'Seguridad',
+  'Otro',
+];
+
+const _metodosPago = [
+  'Transferencia',
+  'Efectivo',
+  'Debito',
+  'Credito',
+  'Mercado Pago',
+  'Otro',
+];
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -385,6 +419,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
+    final confirmed = await _confirmAction(
+      title: usuario == null ? 'Crear cliente' : 'Guardar cliente',
+      message:
+          'Se guardaran los datos de ${result.nombreUsuario} en la plataforma.',
+      confirmLabel: 'Guardar',
+    );
+    if (!confirmed) {
+      return;
+    }
+
     await _save(() => widget.repository.guardarUsuario(result));
   }
 
@@ -397,6 +441,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     if (result == null) {
+      return;
+    }
+
+    final confirmed = await _confirmAction(
+      title: producto == null ? 'Crear producto' : 'Guardar producto',
+      message:
+          'Se guardara ${result.nombreProducto} dentro de la carta operativa.',
+      confirmLabel: 'Guardar',
+    );
+    if (!confirmed) {
       return;
     }
 
@@ -421,6 +475,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     if (result == null) {
+      return;
+    }
+
+    final confirmed = await _confirmAction(
+      title: 'Registrar consumo',
+      message:
+          'Se cargaran ${result.length} producto(s) a la cuenta seleccionada.',
+      confirmLabel: 'Registrar',
+    );
+    if (!confirmed) {
       return;
     }
 
@@ -451,6 +515,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
+    final confirmed = await _confirmAction(
+      title: 'Registrar pago',
+      message:
+          'Se registrara un pago por ${CurrencyFormatter.clp(result.montoPago)}.',
+      confirmLabel: 'Registrar',
+    );
+    if (!confirmed) {
+      return;
+    }
+
     await _save(() => widget.repository.guardarPago(result));
   }
 
@@ -463,6 +537,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     if (result == null) {
+      return;
+    }
+
+    final confirmed = await _confirmAction(
+      title: trabajador == null ? 'Crear trabajador' : 'Guardar trabajador',
+      message:
+          'Se guardaran los datos laborales de ${result.nombreTrabajador}.',
+      confirmLabel: 'Guardar',
+    );
+    if (!confirmed) {
       return;
     }
 
@@ -489,6 +573,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
+    final confirmed = await _confirmAction(
+      title: 'Registrar consumo personal',
+      message:
+          'Se descontara ${CurrencyFormatter.clp(result.montoConsumoPersonal)} al trabajador seleccionado.',
+      confirmLabel: 'Registrar',
+    );
+    if (!confirmed) {
+      return;
+    }
+
     await _save(() => widget.repository.guardarConsumoPersonal(result));
   }
 
@@ -501,6 +595,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     if (result == null) {
+      return;
+    }
+
+    final confirmed = await _confirmAction(
+      title: 'Corregir asistencia',
+      message:
+          'Se actualizara este turno y quedara marcado como corregido en auditoria.',
+      confirmLabel: 'Corregir',
+    );
+    if (!confirmed) {
       return;
     }
 
@@ -551,6 +655,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
+    final confirmed = await _confirmAction(
+      title: 'Iniciar turno',
+      message: 'Se registrara tu hora de entrada con la fecha y hora actual.',
+      confirmLabel: 'Iniciar',
+    );
+    if (!confirmed) {
+      return;
+    }
+
     final now = DateTime.now();
     await _save(
       () => widget.repository.guardarAsistencia(
@@ -581,6 +694,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final asistencia = _asistenciaAbierta(trabajador.idTrabajador);
     if (asistencia == null) {
       _showSnack('No tienes un turno en curso.');
+      return;
+    }
+
+    final confirmed = await _confirmAction(
+      title: 'Finalizar turno',
+      message: 'Se registrara tu hora de salida y el total trabajado.',
+      confirmLabel: 'Finalizar',
+    );
+    if (!confirmed) {
       return;
     }
 
@@ -627,6 +749,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _toggleUsuario(Usuario usuario) async {
+    final willActivate = !usuario.estaActivoUsuario;
+    final confirmed = await _confirmAction(
+      title: willActivate ? 'Reactivar cliente' : 'Eliminar cliente',
+      message: willActivate
+          ? '${usuario.nombreUsuario} volvera a estar disponible para nuevas operaciones.'
+          : '${usuario.nombreUsuario} saldra de la operacion activa, manteniendo su historial y saldos.',
+      confirmLabel: willActivate ? 'Reactivar' : 'Eliminar',
+      isDestructive: !willActivate,
+    );
+    if (!confirmed) {
+      return;
+    }
+
     await _save(
       () => widget.repository.guardarUsuario(
         usuario.copyWith(estaActivoUsuario: !usuario.estaActivoUsuario),
@@ -635,6 +770,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _toggleProducto(Producto producto) async {
+    final willActivate = !producto.estaActivoProducto;
+    final confirmed = await _confirmAction(
+      title: willActivate ? 'Reactivar producto' : 'Eliminar producto',
+      message: willActivate
+          ? '${producto.nombreProducto} volvera a estar disponible en la carta.'
+          : '${producto.nombreProducto} saldra de la carta activa, manteniendo el historial de consumos.',
+      confirmLabel: willActivate ? 'Reactivar' : 'Eliminar',
+      isDestructive: !willActivate,
+    );
+    if (!confirmed) {
+      return;
+    }
+
     await _save(
       () => widget.repository.guardarProducto(
         producto.copyWith(estaActivoProducto: !producto.estaActivoProducto),
@@ -682,6 +830,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
+    final confirmed = await _confirmAction(
+      title: 'Editar consumo',
+      message: 'Se actualizara este consumo y quedara registro en auditoria.',
+      confirmLabel: 'Guardar',
+    );
+    if (!confirmed) {
+      return;
+    }
+
     await _save(() async {
       await widget.repository.guardarConsumo(result);
       await _registrarAuditoria(
@@ -702,6 +859,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     if (result == null) {
+      return;
+    }
+
+    final confirmed = await _confirmAction(
+      title: 'Editar pago',
+      message: 'Se actualizara este pago y quedara registro en auditoria.',
+      confirmLabel: 'Guardar',
+    );
+    if (!confirmed) {
       return;
     }
 
@@ -736,6 +902,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
         idUsuarioMovimiento: pago.idUsuario,
       );
     });
+  }
+
+  Future<void> _toggleTrabajador(Trabajador trabajador) async {
+    final willActivate = !trabajador.estaActivoTrabajador;
+    final confirmed = await _confirmAction(
+      title: willActivate ? 'Reactivar trabajador' : 'Eliminar trabajador',
+      message: willActivate
+          ? '${trabajador.nombreTrabajador} volvera a estar disponible para turnos.'
+          : '${trabajador.nombreTrabajador} saldra del equipo activo, manteniendo asistencia, consumos y auditoria.',
+      confirmLabel: willActivate ? 'Reactivar' : 'Eliminar',
+      isDestructive: !willActivate,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await _save(
+      () => widget.repository.guardarTrabajador(
+        trabajador.copyWith(estaActivoTrabajador: willActivate),
+      ),
+    );
   }
 
   Future<void> _registrarAuditoria({
@@ -791,9 +978,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required String title,
     required String message,
   }) async {
+    return _confirmAction(
+      title: title,
+      message: message,
+      confirmLabel: 'Anular',
+      isDestructive: true,
+    );
+  }
+
+  Future<bool> _confirmAction({
+    required String title,
+    required String message,
+    String confirmLabel = 'Confirmar',
+    bool isDestructive = false,
+  }) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        icon: Icon(
+          isDestructive ? Icons.warning_amber_rounded : Icons.verified_rounded,
+          color: isDestructive ? KutralKoColors.ember : KutralKoColors.gold,
+        ),
         title: Text(title),
         content: Text(message),
         actions: [
@@ -803,7 +1008,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Anular'),
+            style: isDestructive
+                ? FilledButton.styleFrom(
+                    backgroundColor: KutralKoColors.ember,
+                    foregroundColor: KutralKoColors.ivory,
+                  )
+                : null,
+            child: Text(confirmLabel),
           ),
         ],
       ),
@@ -881,6 +1092,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         onEditarTrabajador: () {
           Navigator.of(sheetContext).pop();
           _openTrabajadorForm(trabajador);
+        },
+        onToggleTrabajador: () {
+          Navigator.of(sheetContext).pop();
+          _toggleTrabajador(trabajador);
         },
         onEditarAsistencia: _editarAsistencia,
         onAnularConsumoPersonal: _anularConsumoPersonal,
@@ -1105,113 +1320,119 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const destinations = [
-      _DashboardDestination(
-        icon: Icons.dashboard_outlined,
-        selectedIcon: Icons.dashboard_rounded,
-        label: 'Inicio',
+    final allPages = [
+      _DashboardPage(
+        destination: const _DashboardDestination(
+          icon: Icons.dashboard_outlined,
+          selectedIcon: Icons.dashboard_rounded,
+          label: 'Inicio',
+        ),
+        child: _HomeView(
+          usuarios: _usuariosPermitidos,
+          saldoPendiente: _saldoPendiente,
+          totalConsumido: _totalConsumido,
+          totalPagado: _totalPagado,
+          saldoUsuario: _saldoUsuario,
+          mesLabel: _monthLabel(_mesSeleccionado),
+          onPreviousMonth: () => _changeMonth(-1),
+          onNextMonth: () => _changeMonth(1),
+          onOpenUsuario: _openUsuarioDetail,
+          onNuevoConsumo: _puedeAdministrar ? _openConsumoForm : null,
+          onNuevoPago: _puedeAdministrar ? _openPagoForm : null,
+        ),
       ),
-      _DashboardDestination(
-        icon: Icons.people_alt_outlined,
-        selectedIcon: Icons.people_alt_rounded,
-        label: 'Clientes',
-      ),
-      _DashboardDestination(
-        icon: Icons.local_dining_outlined,
-        selectedIcon: Icons.local_dining_rounded,
-        label: 'Carta',
-      ),
-      _DashboardDestination(
-        icon: Icons.receipt_long_outlined,
-        selectedIcon: Icons.receipt_long_rounded,
-        label: 'Cuenta',
-      ),
-      _DashboardDestination(
-        icon: Icons.badge_outlined,
-        selectedIcon: Icons.badge_rounded,
-        label: 'Personal',
-      ),
+      if (_puedeAdministrar || _rolPerfil == 'cliente')
+        _DashboardPage(
+          destination: const _DashboardDestination(
+            icon: Icons.people_alt_outlined,
+            selectedIcon: Icons.people_alt_rounded,
+            label: 'Clientes',
+          ),
+          child: _UsuariosView(
+            usuarios: _usuariosPermitidos,
+            saldoUsuario: _saldoUsuario,
+            puedeAdministrar: _puedeAdministrar,
+            onNuevoUsuario: _puedeAdministrar ? () => _openUsuarioForm() : null,
+            onOpenUsuario: _openUsuarioDetail,
+            onEditarUsuario: _puedeAdministrar ? _openUsuarioForm : null,
+            onToggleUsuario: _puedeAdministrar ? _toggleUsuario : null,
+          ),
+        ),
+      if (_puedeAdministrar || _rolPerfil == 'cliente')
+        _DashboardPage(
+          destination: const _DashboardDestination(
+            icon: Icons.local_dining_outlined,
+            selectedIcon: Icons.local_dining_rounded,
+            label: 'Carta',
+          ),
+          child: _ProductosView(
+            productos: _productos,
+            puedeAdministrar: _puedeAdministrar,
+            onNuevoProducto: _puedeAdministrar
+                ? () => _openProductoForm()
+                : null,
+            onEditarProducto: _puedeAdministrar ? _openProductoForm : null,
+            onToggleProducto: _puedeAdministrar ? _toggleProducto : null,
+          ),
+        ),
+      if (_puedeAdministrar || _rolPerfil == 'cliente')
+        _DashboardPage(
+          destination: const _DashboardDestination(
+            icon: Icons.receipt_long_outlined,
+            selectedIcon: Icons.receipt_long_rounded,
+            label: 'Cuenta',
+          ),
+          child: _MovimientosView(
+            usuarios: _usuariosPermitidos,
+            consumos: _consumosMesPermitidos,
+            pagos: _pagosMesPermitidos,
+            puedeAdministrar: _puedeAdministrar,
+            onNuevoConsumo: _puedeAdministrar ? _openConsumoForm : null,
+            onNuevoPago: _puedeAdministrar ? _openPagoForm : null,
+            onAnularConsumo: _puedeAdministrar ? _anularConsumo : null,
+            onAnularPago: _puedeAdministrar ? _anularPago : null,
+            onEditarConsumo: _puedeAdministrar ? _editarConsumo : null,
+            onEditarPago: _puedeAdministrar ? _editarPago : null,
+          ),
+        ),
+      if (_puedeAdministrar || _rolPerfil == 'trabajador')
+        _DashboardPage(
+          destination: const _DashboardDestination(
+            icon: Icons.badge_outlined,
+            selectedIcon: Icons.badge_rounded,
+            label: 'Personal',
+          ),
+          child: _PersonalView(
+            trabajadores: _puedeAdministrar
+                ? _trabajadores
+                : _trabajadoresActivos,
+            asistencias: _asistenciasMes,
+            consumosPersonal: _consumosPersonalMes,
+            trabajadorPerfil: _trabajadorPerfil,
+            puedeAdministrar: _puedeAdministrar,
+            esTrabajador: _esTrabajador,
+            mesLabel: _monthLabel(_mesSeleccionado),
+            asistenciaAbierta: _trabajadorPerfil == null
+                ? null
+                : _asistenciaAbierta(_trabajadorPerfil!.idTrabajador),
+            onNuevoTrabajador: _puedeAdministrar
+                ? () => _openTrabajadorForm()
+                : null,
+            onRegistrarConsumo: _puedeAdministrar
+                ? _openConsumoPersonalForm
+                : null,
+            onOpenTrabajador: _puedeAdministrar ? _openTrabajadorDetail : null,
+            onExportPdf: _puedeAdministrar ? _exportPersonalPdf : null,
+            onExportExcel: _puedeAdministrar ? _exportPersonalExcel : null,
+            onIniciarTurno: _esTrabajador ? _iniciarTurno : null,
+            onFinalizarTurno: _esTrabajador ? _finalizarTurno : null,
+          ),
+        ),
     ];
-    final pages = [
-      _HomeView(
-        usuarios: _usuariosPermitidos,
-        saldoPendiente: _saldoPendiente,
-        totalConsumido: _totalConsumido,
-        totalPagado: _totalPagado,
-        saldoUsuario: _saldoUsuario,
-        mesLabel: _monthLabel(_mesSeleccionado),
-        onPreviousMonth: () => _changeMonth(-1),
-        onNextMonth: () => _changeMonth(1),
-        onOpenUsuario: _openUsuarioDetail,
-        onNuevoConsumo: _puedeAdministrar ? _openConsumoForm : null,
-        onNuevoPago: _puedeAdministrar ? _openPagoForm : null,
-      ),
-      _UsuariosView(
-        usuarios: _usuariosPermitidos,
-        saldoUsuario: _saldoUsuario,
-        puedeAdministrar: _puedeAdministrar,
-        onNuevoUsuario: _puedeAdministrar ? () => _openUsuarioForm() : null,
-        onOpenUsuario: _openUsuarioDetail,
-        onEditarUsuario: _puedeAdministrar ? _openUsuarioForm : null,
-        onToggleUsuario: _puedeAdministrar ? _toggleUsuario : null,
-      ),
-      _ProductosView(
-        productos: _productos,
-        puedeAdministrar: _puedeAdministrar,
-        onNuevoProducto: _puedeAdministrar ? () => _openProductoForm() : null,
-        onEditarProducto: _puedeAdministrar ? _openProductoForm : null,
-        onToggleProducto: _puedeAdministrar ? _toggleProducto : null,
-      ),
-      _MovimientosView(
-        usuarios: _usuariosPermitidos,
-        consumos: _consumosMesPermitidos,
-        pagos: _pagosMesPermitidos,
-        puedeAdministrar: _puedeAdministrar,
-        onNuevoConsumo: _puedeAdministrar ? _openConsumoForm : null,
-        onNuevoPago: _puedeAdministrar ? _openPagoForm : null,
-        onAnularConsumo: _puedeAdministrar
-            ? (consumo) {
-                _anularConsumo(consumo);
-              }
-            : null,
-        onAnularPago: _puedeAdministrar
-            ? (pago) {
-                _anularPago(pago);
-              }
-            : null,
-        onEditarConsumo: _puedeAdministrar
-            ? (consumo) {
-                _editarConsumo(consumo);
-              }
-            : null,
-        onEditarPago: _puedeAdministrar
-            ? (pago) {
-                _editarPago(pago);
-              }
-            : null,
-      ),
-      _PersonalView(
-        trabajadores: _trabajadoresActivos,
-        asistencias: _asistenciasMes,
-        consumosPersonal: _consumosPersonalMes,
-        trabajadorPerfil: _trabajadorPerfil,
-        puedeAdministrar: _puedeAdministrar,
-        esTrabajador: _esTrabajador,
-        mesLabel: _monthLabel(_mesSeleccionado),
-        asistenciaAbierta: _trabajadorPerfil == null
-            ? null
-            : _asistenciaAbierta(_trabajadorPerfil!.idTrabajador),
-        onNuevoTrabajador: _puedeAdministrar
-            ? () => _openTrabajadorForm()
-            : null,
-        onRegistrarConsumo: _puedeAdministrar ? _openConsumoPersonalForm : null,
-        onOpenTrabajador: _puedeAdministrar ? _openTrabajadorDetail : null,
-        onExportPdf: _puedeAdministrar ? _exportPersonalPdf : null,
-        onExportExcel: _puedeAdministrar ? _exportPersonalExcel : null,
-        onIniciarTurno: _esTrabajador ? _iniciarTurno : null,
-        onFinalizarTurno: _esTrabajador ? _finalizarTurno : null,
-      ),
-    ];
+    final selectedIndex = _selectedIndex >= allPages.length
+        ? allPages.length - 1
+        : _selectedIndex;
+    final destinations = [for (final page in allPages) page.destination];
     final isWidePanel = MediaQuery.sizeOf(context).width >= 920;
 
     return Scaffold(
@@ -1263,7 +1484,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: isWidePanel
             ? _WebPanelShell(
                 destinations: destinations,
-                selectedIndex: _selectedIndex,
+                selectedIndex: selectedIndex,
                 onDestinationSelected: (index) =>
                     setState(() => _selectedIndex = index),
                 rolPerfil: _rolPerfil,
@@ -1271,7 +1492,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 isLoading: _isPerfilLoading,
                 idUsuarioPerfil: _idUsuarioPerfil,
                 idTrabajadorPerfil: _idTrabajadorPerfil,
-                child: pages[_selectedIndex],
+                child: allPages[selectedIndex].child,
               )
             : Column(
                 children: [
@@ -1282,14 +1503,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     idUsuarioPerfil: _idUsuarioPerfil,
                     idTrabajadorPerfil: _idTrabajadorPerfil,
                   ),
-                  Expanded(child: pages[_selectedIndex]),
+                  Expanded(child: allPages[selectedIndex].child),
                 ],
               ),
       ),
       bottomNavigationBar: isWidePanel
           ? null
           : NavigationBar(
-              selectedIndex: _selectedIndex,
+              selectedIndex: selectedIndex,
               onDestinationSelected: (index) =>
                   setState(() => _selectedIndex = index),
               destinations: [
@@ -1315,6 +1536,13 @@ class _DashboardDestination {
   final IconData icon;
   final IconData selectedIcon;
   final String label;
+}
+
+class _DashboardPage {
+  const _DashboardPage({required this.destination, required this.child});
+
+  final _DashboardDestination destination;
+  final Widget child;
 }
 
 class _PersonalReportRow {
@@ -2480,7 +2708,7 @@ class _UsuariosView extends StatelessWidget {
       children: [
         _SectionHeader(
           title: 'Clientes',
-          action: puedeAdministrar ? 'Nuevo' : null,
+          action: puedeAdministrar ? 'Nuevo cliente' : null,
           onAction: onNuevoUsuario,
         ),
         const SizedBox(height: 12),
@@ -2528,7 +2756,7 @@ class _ProductosView extends StatelessWidget {
       children: [
         _SectionHeader(
           title: 'Carta editable',
-          action: puedeAdministrar ? 'Producto' : null,
+          action: puedeAdministrar ? 'Nuevo producto' : null,
           onAction: onNuevoProducto,
         ),
         const SizedBox(height: 12),
@@ -3013,7 +3241,7 @@ class _PersonalView extends StatelessWidget {
       children: [
         _SectionHeader(
           title: puedeAdministrar ? 'Personal' : 'Mi turno',
-          action: puedeAdministrar ? 'Trabajador' : null,
+          action: puedeAdministrar ? 'Nuevo trabajador' : null,
           onAction: onNuevoTrabajador,
         ),
         const SizedBox(height: 12),
@@ -3292,7 +3520,7 @@ class _AdminMetricCard extends StatelessWidget {
             Text(
               label,
               style: const TextStyle(
-                color: KutralKoColors.muted,
+                color: KutralKoColors.smoke,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -3327,15 +3555,23 @@ class _TrabajadorTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final foreground = trabajador.estaActivoTrabajador
+        ? KutralKoColors.ivory
+        : KutralKoColors.muted;
+
     return Card(
       child: ListTile(
         onTap: onOpen,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
-          backgroundColor: asistenciaAbierta == null
-              ? KutralKoColors.smoke
+          backgroundColor: !trabajador.estaActivoTrabajador
+              ? KutralKoColors.charcoal
+              : asistenciaAbierta == null
+              ? KutralKoColors.gold.withValues(alpha: 0.18)
               : KutralKoColors.gold.withValues(alpha: 0.28),
-          foregroundColor: KutralKoColors.carbon,
+          foregroundColor: trabajador.estaActivoTrabajador
+              ? KutralKoColors.gold
+              : KutralKoColors.muted,
           child: Icon(
             asistenciaAbierta == null
                 ? Icons.person_rounded
@@ -3344,10 +3580,13 @@ class _TrabajadorTile extends StatelessWidget {
         ),
         title: Text(
           trabajador.nombreTrabajador,
-          style: const TextStyle(fontWeight: FontWeight.w900),
+          style: TextStyle(color: foreground, fontWeight: FontWeight.w900),
         ),
         subtitle: Text(
-          '${trabajador.cargoTrabajador} · ${asistenciaAbierta == null ? 'Fuera de turno' : 'En turno'}',
+          trabajador.estaActivoTrabajador
+              ? '${trabajador.cargoTrabajador} · ${asistenciaAbierta == null ? 'Fuera de turno' : 'En turno'}'
+              : 'Trabajador eliminado de la operacion activa',
+          style: const TextStyle(color: KutralKoColors.smoke),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -3357,12 +3596,15 @@ class _TrabajadorTile extends StatelessWidget {
           children: [
             Text(
               _formatMinutes(minutosMes),
-              style: const TextStyle(fontWeight: FontWeight.w900),
+              style: const TextStyle(
+                color: KutralKoColors.ivory,
+                fontWeight: FontWeight.w900,
+              ),
             ),
             Text(
               CurrencyFormatter.clp(consumoMes),
               style: const TextStyle(
-                color: KutralKoColors.ember,
+                color: KutralKoColors.gold,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -3428,6 +3670,7 @@ class _TrabajadorDetailSheet extends StatelessWidget {
     required this.consumosPersonal,
     required this.asistenciaAbierta,
     required this.onEditarTrabajador,
+    required this.onToggleTrabajador,
     required this.onEditarAsistencia,
     required this.onAnularConsumoPersonal,
   });
@@ -3437,6 +3680,7 @@ class _TrabajadorDetailSheet extends StatelessWidget {
   final List<ConsumoPersonal> consumosPersonal;
   final Asistencia? asistenciaAbierta;
   final VoidCallback onEditarTrabajador;
+  final VoidCallback onToggleTrabajador;
   final ValueChanged<Asistencia> onEditarAsistencia;
   final ValueChanged<ConsumoPersonal> onAnularConsumoPersonal;
 
@@ -3518,10 +3762,26 @@ class _TrabajadorDetailSheet extends StatelessWidget {
               subtitle: Text(
                 '${trabajador.cargoTrabajador} · ${trabajador.emailTrabajador.isEmpty ? 'sin correo' : trabajador.emailTrabajador}',
               ),
-              trailing: IconButton(
-                tooltip: 'Editar trabajador',
-                onPressed: onEditarTrabajador,
-                icon: const Icon(Icons.edit_rounded),
+              trailing: Wrap(
+                spacing: 2,
+                children: [
+                  IconButton(
+                    tooltip: 'Editar trabajador',
+                    onPressed: onEditarTrabajador,
+                    icon: const Icon(Icons.edit_rounded),
+                  ),
+                  IconButton(
+                    tooltip: trabajador.estaActivoTrabajador
+                        ? 'Eliminar trabajador'
+                        : 'Reactivar trabajador',
+                    onPressed: onToggleTrabajador,
+                    icon: Icon(
+                      trabajador.estaActivoTrabajador
+                          ? Icons.person_remove_rounded
+                          : Icons.person_add_alt_1_rounded,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -3590,27 +3850,72 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
+    final button = action == null
+        ? null
+        : FilledButton.icon(
+            onPressed: onAction,
+            icon: Icon(_actionIcon(action!)),
+            label: Text(action!),
+            style: FilledButton.styleFrom(
+              backgroundColor: KutralKoColors.gold,
+              foregroundColor: KutralKoColors.carbon,
+              elevation: 0,
+              minimumSize: const Size(168, 48),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final titleWidget = Text(
           title,
           style: const TextStyle(
-            color: KutralKoColors.carbon,
+            color: KutralKoColors.ivory,
             fontSize: 21,
             fontWeight: FontWeight.w900,
           ),
-        ),
-        if (action != null)
-          TextButton(
-            onPressed: onAction,
-            child: Text(
-              action!,
-              style: const TextStyle(fontWeight: FontWeight.w900),
-            ),
-          ),
-      ],
+        );
+
+        if (button == null) {
+          return titleWidget;
+        }
+
+        if (constraints.maxWidth < 430) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [titleWidget, const SizedBox(height: 10), button],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: titleWidget),
+            const SizedBox(width: 16),
+            button,
+          ],
+        );
+      },
     );
+  }
+
+  IconData _actionIcon(String action) {
+    if (action.contains('cliente')) {
+      return Icons.person_add_alt_1_rounded;
+    }
+    if (action.contains('producto')) {
+      return Icons.add_shopping_cart_rounded;
+    }
+    if (action.contains('trabajador')) {
+      return Icons.badge_rounded;
+    }
+    return Icons.add_rounded;
   }
 }
 
@@ -3632,7 +3937,7 @@ class _UsuarioTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final foreground = usuario.estaActivoUsuario
-        ? KutralKoColors.carbon
+        ? KutralKoColors.ivory
         : KutralKoColors.muted;
 
     return Card(
@@ -3641,9 +3946,11 @@ class _UsuarioTile extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
           backgroundColor: usuario.estaActivoUsuario
-              ? KutralKoColors.smoke
-              : KutralKoColors.smoke.withValues(alpha: 0.45),
-          foregroundColor: foreground,
+              ? KutralKoColors.gold.withValues(alpha: 0.22)
+              : KutralKoColors.charcoal,
+          foregroundColor: usuario.estaActivoUsuario
+              ? KutralKoColors.gold
+              : KutralKoColors.muted,
           child: Text(
             usuario.nombreUsuario.characters.first.toUpperCase(),
             style: const TextStyle(fontWeight: FontWeight.w900),
@@ -3655,6 +3962,7 @@ class _UsuarioTile extends StatelessWidget {
         ),
         subtitle: Text(
           usuario.estaActivoUsuario ? usuario.notaUsuario : 'Cliente inactivo',
+          style: const TextStyle(color: KutralKoColors.smoke),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -3670,13 +3978,13 @@ class _UsuarioTile extends StatelessWidget {
                   ),
                   IconButton(
                     tooltip: usuario.estaActivoUsuario
-                        ? 'Desactivar'
-                        : 'Activar',
+                        ? 'Eliminar cliente'
+                        : 'Reactivar cliente',
                     onPressed: onToggle,
                     icon: Icon(
                       usuario.estaActivoUsuario
-                          ? Icons.visibility_rounded
-                          : Icons.visibility_off_rounded,
+                          ? Icons.person_remove_rounded
+                          : Icons.person_add_alt_1_rounded,
                     ),
                   ),
                 ],
@@ -3708,7 +4016,7 @@ class _SaldoBadge extends StatelessWidget {
         Text(
           CurrencyFormatter.clp(saldo),
           style: const TextStyle(
-            color: KutralKoColors.ember,
+            color: KutralKoColors.gold,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -3733,7 +4041,7 @@ class _ProductoTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final foreground = producto.estaActivoProducto
-        ? KutralKoColors.carbon
+        ? KutralKoColors.ivory
         : KutralKoColors.muted;
 
     return Card(
@@ -3758,6 +4066,7 @@ class _ProductoTile extends StatelessWidget {
           producto.estaActivoProducto
               ? '${producto.nombreCategoriaProducto} · ${CurrencyFormatter.clp(producto.precioProducto)}'
               : 'Producto inactivo · ${CurrencyFormatter.clp(producto.precioProducto)}',
+          style: const TextStyle(color: KutralKoColors.smoke),
         ),
         trailing: puedeAdministrar
             ? Wrap(
@@ -3770,20 +4079,23 @@ class _ProductoTile extends StatelessWidget {
                   ),
                   IconButton(
                     tooltip: producto.estaActivoProducto
-                        ? 'Desactivar'
-                        : 'Activar',
+                        ? 'Eliminar producto'
+                        : 'Reactivar producto',
                     onPressed: onToggle,
                     icon: Icon(
                       producto.estaActivoProducto
-                          ? Icons.visibility_rounded
-                          : Icons.visibility_off_rounded,
+                          ? Icons.delete_outline_rounded
+                          : Icons.restore_from_trash_rounded,
                     ),
                   ),
                 ],
               )
             : Text(
                 CurrencyFormatter.clp(producto.precioProducto),
-                style: const TextStyle(fontWeight: FontWeight.w900),
+                style: const TextStyle(
+                  color: KutralKoColors.gold,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
       ),
     );
@@ -3838,7 +4150,7 @@ class _MovementRow extends StatelessWidget {
                   style: TextStyle(
                     color: isAnulado
                         ? KutralKoColors.muted
-                        : KutralKoColors.carbon,
+                        : KutralKoColors.ivory,
                     decoration: isAnulado ? TextDecoration.lineThrough : null,
                     fontWeight: FontWeight.w900,
                   ),
@@ -3847,7 +4159,7 @@ class _MovementRow extends StatelessWidget {
                   detail,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: KutralKoColors.muted),
+                  style: const TextStyle(color: KutralKoColors.smoke),
                 ),
               ],
             ),
@@ -3857,7 +4169,7 @@ class _MovementRow extends StatelessWidget {
             amount,
             textAlign: TextAlign.end,
             style: TextStyle(
-              color: isAnulado ? KutralKoColors.muted : KutralKoColors.carbon,
+              color: isAnulado ? KutralKoColors.muted : KutralKoColors.ivory,
               decoration: isAnulado ? TextDecoration.lineThrough : null,
               fontWeight: FontWeight.w900,
             ),
@@ -3923,19 +4235,26 @@ class _EmptyState extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: KutralKoColors.smoke.withValues(alpha: 0.55),
+        color: KutralKoColors.graphite,
+        border: Border.all(color: KutralKoColors.gold.withValues(alpha: 0.12)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         children: [
           Icon(icon, color: KutralKoColors.muted, size: 28),
           const SizedBox(height: 8),
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+          Text(
+            title,
+            style: const TextStyle(
+              color: KutralKoColors.ivory,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
           const SizedBox(height: 4),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: KutralKoColors.muted),
+            style: const TextStyle(color: KutralKoColors.smoke),
           ),
         ],
       ),
@@ -3990,7 +4309,7 @@ class _UsuarioFormSheetState extends State<_UsuarioFormSheet> {
       Usuario(
         idUsuario: widget.usuario?.idUsuario ?? '',
         nombreUsuario: _nombreController.text.trim(),
-        telefonoUsuario: _telefonoController.text.trim(),
+        telefonoUsuario: _formatWhatsappPhone(_telefonoController.text),
         notaUsuario: _notaController.text.trim(),
         estaActivoUsuario: _estaActivoUsuario,
       ),
@@ -4024,7 +4343,9 @@ class _UsuarioFormSheetState extends State<_UsuarioFormSheet> {
                 prefixIcon: Icon(Icons.phone_rounded),
               ),
               keyboardType: TextInputType.phone,
+              inputFormatters: [_WhatsappPhoneInputFormatter()],
               textInputAction: TextInputAction.next,
+              validator: _optionalWhatsappValidator,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -4065,10 +4386,9 @@ class _ProductoFormSheet extends StatefulWidget {
 class _ProductoFormSheetState extends State<_ProductoFormSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nombreController;
-  late final TextEditingController _categoriaController;
   late final TextEditingController _precioController;
+  late String _categoriaProducto;
   late bool _estaActivoProducto;
-  late bool _esProductoFrecuente;
 
   @override
   void initState() {
@@ -4077,20 +4397,19 @@ class _ProductoFormSheetState extends State<_ProductoFormSheet> {
     _nombreController = TextEditingController(
       text: producto?.nombreProducto ?? '',
     );
-    _categoriaController = TextEditingController(
-      text: producto?.nombreCategoriaProducto ?? '',
+    _categoriaProducto = _fixedValueOrFirst(
+      producto?.nombreCategoriaProducto,
+      _categoriasProducto,
     );
     _precioController = TextEditingController(
       text: producto == null ? '' : producto.precioProducto.toString(),
     );
     _estaActivoProducto = producto?.estaActivoProducto ?? true;
-    _esProductoFrecuente = producto?.esProductoFrecuente ?? false;
   }
 
   @override
   void dispose() {
     _nombreController.dispose();
-    _categoriaController.dispose();
     _precioController.dispose();
     super.dispose();
   }
@@ -4104,10 +4423,10 @@ class _ProductoFormSheetState extends State<_ProductoFormSheet> {
       Producto(
         idProducto: widget.producto?.idProducto ?? '',
         nombreProducto: _nombreController.text.trim(),
-        nombreCategoriaProducto: _categoriaController.text.trim(),
+        nombreCategoriaProducto: _categoriaProducto,
         precioProducto: int.parse(_precioController.text.trim()),
         estaActivoProducto: _estaActivoProducto,
-        esProductoFrecuente: _esProductoFrecuente,
+        esProductoFrecuente: false,
       ),
     );
   }
@@ -4131,15 +4450,17 @@ class _ProductoFormSheetState extends State<_ProductoFormSheet> {
               validator: _requiredValidator,
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _categoriaController,
+            DropdownButtonFormField<String>(
+              initialValue: _categoriaProducto,
               decoration: const InputDecoration(
                 labelText: 'Categoria',
-                hintText: 'Ej: Cocteleria',
                 prefixIcon: Icon(Icons.category_rounded),
               ),
-              textInputAction: TextInputAction.next,
-              validator: _requiredValidator,
+              items: [
+                for (final categoria in _categoriasProducto)
+                  DropdownMenuItem(value: categoria, child: Text(categoria)),
+              ],
+              onChanged: (value) => setState(() => _categoriaProducto = value!),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -4157,13 +4478,6 @@ class _ProductoFormSheetState extends State<_ProductoFormSheet> {
               value: _estaActivoProducto,
               onChanged: (value) => setState(() => _estaActivoProducto = value),
               title: const Text('Producto activo'),
-              contentPadding: EdgeInsets.zero,
-            ),
-            SwitchListTile(
-              value: _esProductoFrecuente,
-              onChanged: (value) =>
-                  setState(() => _esProductoFrecuente = value),
-              title: const Text('Producto frecuente'),
               contentPadding: EdgeInsets.zero,
             ),
             const SizedBox(height: 12),
@@ -4189,8 +4503,8 @@ class _TrabajadorFormSheetState extends State<_TrabajadorFormSheet> {
   late final TextEditingController _nombreController;
   late final TextEditingController _emailController;
   late final TextEditingController _telefonoController;
-  late final TextEditingController _cargoController;
   late final TextEditingController _idPerfilController;
+  late String _cargoTrabajador;
   late bool _estaActivoTrabajador;
 
   @override
@@ -4206,8 +4520,9 @@ class _TrabajadorFormSheetState extends State<_TrabajadorFormSheet> {
     _telefonoController = TextEditingController(
       text: trabajador?.telefonoTrabajador ?? '',
     );
-    _cargoController = TextEditingController(
-      text: trabajador?.cargoTrabajador ?? '',
+    _cargoTrabajador = _fixedValueOrFirst(
+      trabajador?.cargoTrabajador,
+      _tiposTrabajador,
     );
     _idPerfilController = TextEditingController(
       text: trabajador?.idPerfil ?? '',
@@ -4220,7 +4535,6 @@ class _TrabajadorFormSheetState extends State<_TrabajadorFormSheet> {
     _nombreController.dispose();
     _emailController.dispose();
     _telefonoController.dispose();
-    _cargoController.dispose();
     _idPerfilController.dispose();
     super.dispose();
   }
@@ -4235,8 +4549,8 @@ class _TrabajadorFormSheetState extends State<_TrabajadorFormSheet> {
         idTrabajador: widget.trabajador?.idTrabajador ?? '',
         nombreTrabajador: _nombreController.text.trim(),
         emailTrabajador: _emailController.text.trim(),
-        telefonoTrabajador: _telefonoController.text.trim(),
-        cargoTrabajador: _cargoController.text.trim(),
+        telefonoTrabajador: _formatWhatsappPhone(_telefonoController.text),
+        cargoTrabajador: _cargoTrabajador,
         estaActivoTrabajador: _estaActivoTrabajador,
         idPerfil: _idPerfilController.text.trim(),
       ),
@@ -4282,18 +4596,22 @@ class _TrabajadorFormSheetState extends State<_TrabajadorFormSheet> {
                 prefixIcon: Icon(Icons.phone_rounded),
               ),
               keyboardType: TextInputType.phone,
+              inputFormatters: [_WhatsappPhoneInputFormatter()],
               textInputAction: TextInputAction.next,
+              validator: _optionalWhatsappValidator,
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _cargoController,
+            DropdownButtonFormField<String>(
+              initialValue: _cargoTrabajador,
               decoration: const InputDecoration(
                 labelText: 'Cargo',
-                hintText: 'Ej: Garzon, cocina, barra',
                 prefixIcon: Icon(Icons.work_rounded),
               ),
-              textInputAction: TextInputAction.next,
-              validator: _requiredValidator,
+              items: [
+                for (final cargo in _tiposTrabajador)
+                  DropdownMenuItem(value: cargo, child: Text(cargo)),
+              ],
+              onChanged: (value) => setState(() => _cargoTrabajador = value!),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -4455,6 +4773,8 @@ class _AsistenciaEditFormSheet extends StatefulWidget {
 
 class _AsistenciaEditFormSheetState extends State<_AsistenciaEditFormSheet> {
   final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _horaEntradaController;
+  late final TextEditingController _horaSalidaController;
   late final TextEditingController _minutosTrabajadosController;
   late final TextEditingController _minutosExtraController;
   late final TextEditingController _minutosAtrasoController;
@@ -4465,6 +4785,14 @@ class _AsistenciaEditFormSheetState extends State<_AsistenciaEditFormSheet> {
   void initState() {
     super.initState();
     final asistencia = widget.asistencia;
+    _horaEntradaController = TextEditingController(
+      text: _formatTime(asistencia.horaEntrada),
+    );
+    _horaSalidaController = TextEditingController(
+      text: asistencia.horaSalida == null
+          ? ''
+          : _formatTime(asistencia.horaSalida!),
+    );
     _minutosTrabajadosController = TextEditingController(
       text: asistencia.minutosTrabajados.toString(),
     );
@@ -4482,6 +4810,8 @@ class _AsistenciaEditFormSheetState extends State<_AsistenciaEditFormSheet> {
 
   @override
   void dispose() {
+    _horaEntradaController.dispose();
+    _horaSalidaController.dispose();
     _minutosTrabajadosController.dispose();
     _minutosExtraController.dispose();
     _minutosAtrasoController.dispose();
@@ -4494,9 +4824,26 @@ class _AsistenciaEditFormSheetState extends State<_AsistenciaEditFormSheet> {
       return;
     }
 
+    final horaEntrada = _dateWithTime(
+      widget.asistencia.fechaAsistencia,
+      _horaEntradaController.text,
+    );
+    final horaSalida = _horaSalidaController.text.trim().isEmpty
+        ? null
+        : _dateWithTime(
+            widget.asistencia.fechaAsistencia,
+            _horaSalidaController.text,
+          );
+    final minutosCalculados = horaSalida == null
+        ? int.parse(_minutosTrabajadosController.text.trim())
+        : horaSalida.difference(horaEntrada).inMinutes;
+
     Navigator.of(context).pop(
       widget.asistencia.copyWith(
-        minutosTrabajados: int.parse(_minutosTrabajadosController.text.trim()),
+        horaEntrada: horaEntrada,
+        horaSalida: horaSalida,
+        clearHoraSalida: horaSalida == null,
+        minutosTrabajados: minutosCalculados < 0 ? 0 : minutosCalculados,
         minutosExtra: int.parse(_minutosExtraController.text.trim()),
         minutosAtraso: int.parse(_minutosAtrasoController.text.trim()),
         observacionAsistencia: _observacionController.text.trim(),
@@ -4514,6 +4861,36 @@ class _AsistenciaEditFormSheetState extends State<_AsistenciaEditFormSheet> {
         key: _formKey,
         child: Column(
           children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _horaEntradaController,
+                    decoration: const InputDecoration(
+                      labelText: 'Entrada',
+                      hintText: '09:00',
+                      prefixIcon: Icon(Icons.login_rounded),
+                    ),
+                    keyboardType: TextInputType.datetime,
+                    validator: _timeValidator,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextFormField(
+                    controller: _horaSalidaController,
+                    decoration: const InputDecoration(
+                      labelText: 'Salida',
+                      hintText: '18:00',
+                      prefixIcon: Icon(Icons.logout_rounded),
+                    ),
+                    keyboardType: TextInputType.datetime,
+                    validator: _optionalTimeValidator,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
             TextFormField(
               controller: _minutosTrabajadosController,
               decoration: const InputDecoration(
@@ -5090,8 +5467,8 @@ class _PagoEditFormSheet extends StatefulWidget {
 class _PagoEditFormSheetState extends State<_PagoEditFormSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _montoController;
-  late final TextEditingController _metodoController;
   late final TextEditingController _notaController;
+  late String _metodoPago;
   late Usuario _usuario;
 
   @override
@@ -5103,14 +5480,13 @@ class _PagoEditFormSheetState extends State<_PagoEditFormSheet> {
       orElse: () => widget.usuarios.first,
     );
     _montoController = TextEditingController(text: pago.montoPago.toString());
-    _metodoController = TextEditingController(text: pago.metodoPago);
+    _metodoPago = _fixedValueOrFirst(pago.metodoPago, _metodosPago);
     _notaController = TextEditingController(text: pago.notaPago);
   }
 
   @override
   void dispose() {
     _montoController.dispose();
-    _metodoController.dispose();
     _notaController.dispose();
     super.dispose();
   }
@@ -5124,7 +5500,7 @@ class _PagoEditFormSheetState extends State<_PagoEditFormSheet> {
       widget.pago.copyWith(
         idUsuario: _usuario.idUsuario,
         montoPago: int.parse(_montoController.text.trim()),
-        metodoPago: _metodoController.text.trim(),
+        metodoPago: _metodoPago,
         notaPago: _notaController.text.trim(),
       ),
     );
@@ -5162,14 +5538,17 @@ class _PagoEditFormSheetState extends State<_PagoEditFormSheet> {
               validator: _positiveNumberValidator,
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _metodoController,
+            DropdownButtonFormField<String>(
+              initialValue: _metodoPago,
               decoration: const InputDecoration(
                 labelText: 'Metodo de pago',
-                hintText: 'Ej: Transferencia',
                 prefixIcon: Icon(Icons.account_balance_rounded),
               ),
-              validator: _requiredValidator,
+              items: [
+                for (final metodo in _metodosPago)
+                  DropdownMenuItem(value: metodo, child: Text(metodo)),
+              ],
+              onChanged: (value) => setState(() => _metodoPago = value!),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -5202,8 +5581,8 @@ class _PagoFormSheet extends StatefulWidget {
 class _PagoFormSheetState extends State<_PagoFormSheet> {
   final _formKey = GlobalKey<FormState>();
   final _montoController = TextEditingController();
-  final _metodoController = TextEditingController(text: 'Transferencia');
   final _notaController = TextEditingController();
+  String _metodoPago = _metodosPago.first;
   late Usuario _usuario;
 
   @override
@@ -5220,7 +5599,6 @@ class _PagoFormSheetState extends State<_PagoFormSheet> {
   @override
   void dispose() {
     _montoController.dispose();
-    _metodoController.dispose();
     _notaController.dispose();
     super.dispose();
   }
@@ -5235,7 +5613,7 @@ class _PagoFormSheetState extends State<_PagoFormSheet> {
         idPago: '',
         idUsuario: _usuario.idUsuario,
         montoPago: int.parse(_montoController.text.trim()),
-        metodoPago: _metodoController.text.trim(),
+        metodoPago: _metodoPago,
         fechaPago: DateTime.now(),
         notaPago: _notaController.text.trim(),
         estaAnuladoPago: false,
@@ -5275,14 +5653,17 @@ class _PagoFormSheetState extends State<_PagoFormSheet> {
               validator: _positiveNumberValidator,
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _metodoController,
+            DropdownButtonFormField<String>(
+              initialValue: _metodoPago,
               decoration: const InputDecoration(
                 labelText: 'Metodo de pago',
-                hintText: 'Ej: Transferencia',
                 prefixIcon: Icon(Icons.account_balance_rounded),
               ),
-              validator: _requiredValidator,
+              items: [
+                for (final metodo in _metodosPago)
+                  DropdownMenuItem(value: metodo, child: Text(metodo)),
+              ],
+              onChanged: (value) => setState(() => _metodoPago = value!),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -5310,39 +5691,67 @@ class _FormScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 18,
-        bottom: MediaQuery.viewInsetsOf(context).bottom + 20,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
+    final width = MediaQuery.sizeOf(context).width;
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: width >= 760 ? 680 : width),
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 10,
+            bottom: MediaQuery.viewInsetsOf(context).bottom + 20,
+          ),
+          child: SingleChildScrollView(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: KutralKoColors.graphite,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: KutralKoColors.gold.withValues(alpha: 0.16),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: KutralKoColors.smoke,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: 'Cerrar',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Cerrar',
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  child,
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            child,
-          ],
+          ),
         ),
       ),
     );
@@ -5391,6 +5800,99 @@ String? _nonNegativeNumberValidator(String? value) {
   return null;
 }
 
+String? _timeValidator(String? value) {
+  return _parseTime(value) == null ? 'Usa formato HH:mm' : null;
+}
+
+String? _optionalTimeValidator(String? value) {
+  final raw = value?.trim() ?? '';
+  if (raw.isEmpty) {
+    return null;
+  }
+  return _timeValidator(raw);
+}
+
+String _fixedValueOrFirst(String? value, List<String> options) {
+  final normalized = value?.trim();
+  if (normalized != null && options.contains(normalized)) {
+    return normalized;
+  }
+  return options.first;
+}
+
+String? _optionalWhatsappValidator(String? value) {
+  final raw = value?.trim() ?? '';
+  if (raw.isEmpty) {
+    return null;
+  }
+  final formatted = _formatWhatsappPhone(raw);
+  return formatted.isEmpty ? 'Usa formato WhatsApp: +56 9 XXXX XXXX' : null;
+}
+
+String _formatWhatsappPhone(String value) {
+  var digits = value.replaceAll(RegExp(r'\D'), '');
+  if (digits.isEmpty) {
+    return '';
+  }
+  if (digits.startsWith('00')) {
+    digits = digits.substring(2);
+  }
+  if (digits.startsWith('569') && digits.length >= 11) {
+    digits = digits.substring(2);
+  } else if (digits.startsWith('56') && digits.length >= 10) {
+    digits = digits.substring(2);
+  } else if (digits.startsWith('9') && digits.length == 9) {
+    digits = digits;
+  } else if (digits.length == 8) {
+    digits = '9$digits';
+  }
+
+  if (!digits.startsWith('9') || digits.length != 9) {
+    return '';
+  }
+
+  return '+56 ${digits.substring(0, 1)} ${digits.substring(1, 5)} ${digits.substring(5)}';
+}
+
+({int hour, int minute})? _parseTime(String? value) {
+  final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(value?.trim() ?? '');
+  if (match == null) {
+    return null;
+  }
+  final hour = int.tryParse(match.group(1)!);
+  final minute = int.tryParse(match.group(2)!);
+  if (hour == null || minute == null) {
+    return null;
+  }
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null;
+  }
+  return (hour: hour, minute: minute);
+}
+
+DateTime _dateWithTime(DateTime date, String value) {
+  final time = _parseTime(value)!;
+  return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+}
+
+class _WhatsappPhoneInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final formatted = _formatWhatsappPhone(newValue.text);
+    if (newValue.text.trim().isNotEmpty && formatted.isEmpty) {
+      return newValue;
+    }
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
 String _formatMinutes(int minutes) {
   final safeMinutes = minutes < 0 ? 0 : minutes;
   final hours = safeMinutes ~/ 60;
@@ -5400,6 +5902,10 @@ String _formatMinutes(int minutes) {
 
 String _formatDate(DateTime date) {
   return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+}
+
+String _formatTime(DateTime date) {
+  return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
 }
 
 String _monthLabel(DateTime date) {
