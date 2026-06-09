@@ -103,12 +103,15 @@ class _AuthScreenState extends State<AuthScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(22, 28, 22, 28),
           children: [
-            Image.asset(
-              'assets/brand/kutral_ko_logo_refined.png',
-              height: 92,
-              fit: BoxFit.contain,
+            Center(
+              child: Image.asset(
+                'assets/brand/kutral_ko_login_circle.png',
+                width: 156,
+                height: 156,
+                fit: BoxFit.contain,
+              ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
             const Text(
               'Kutral Ko',
               textAlign: TextAlign.center,

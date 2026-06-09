@@ -1220,7 +1220,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: Row(
           children: [
             Image.asset(
-              'assets/brand/kutral_ko_logo_refined.png',
+              'assets/brand/kutral_ko_login_circle.png',
               width: 42,
               height: 42,
               fit: BoxFit.contain,
@@ -1234,7 +1234,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                 ),
                 Text(
-                  'cuentas mensuales',
+                  'Panel de administración',
                   style: TextStyle(
                     color: KutralKoColors.gold,
                     fontSize: 12,

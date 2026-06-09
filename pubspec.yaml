@@ -25,3 +25,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/brand/kutral_ko_logo_refined.png
+    - assets/brand/kutral_ko_login_circle.png
