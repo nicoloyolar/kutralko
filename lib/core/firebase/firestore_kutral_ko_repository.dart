@@ -3,6 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../data/kutral_ko_repository.dart';
 import '../../features/consumos/domain/consumo.dart';
 import '../../features/pagos/domain/pago.dart';
+import '../../features/personal/domain/asistencia.dart';
+import '../../features/personal/domain/consumo_personal.dart';
+import '../../features/personal/domain/trabajador.dart';
 import '../../features/productos/domain/producto.dart';
 import '../../features/usuarios/domain/usuario.dart';
 
@@ -20,11 +23,20 @@ class FirestoreKutralKoRepository implements KutralKoRepository {
       _firestore.collection('consumos');
   CollectionReference<Map<String, dynamic>> get _pagos =>
       _firestore.collection('pagos');
+  CollectionReference<Map<String, dynamic>> get _trabajadores =>
+      _firestore.collection('trabajadores');
+  CollectionReference<Map<String, dynamic>> get _asistencias =>
+      _firestore.collection('asistencias');
+  CollectionReference<Map<String, dynamic>> get _consumosPersonal =>
+      _firestore.collection('consumosPersonal');
   CollectionReference<Map<String, dynamic>> get _auditoria =>
       _firestore.collection('auditoria');
 
   @override
   Stream<List<Usuario>> watchUsuarios({String? idUsuario}) {
+    if (idUsuario != null && idUsuario.startsWith('__sin_')) {
+      return Stream.value(const []);
+    }
     if (idUsuario != null && idUsuario.isNotEmpty) {
       return _usuarios.doc(idUsuario).snapshots().map((doc) {
         if (!doc.exists) {
@@ -50,6 +62,9 @@ class FirestoreKutralKoRepository implements KutralKoRepository {
 
   @override
   Stream<List<Consumo>> watchConsumos({String? idUsuario}) {
+    if (idUsuario != null && idUsuario.startsWith('__sin_')) {
+      return Stream.value(const []);
+    }
     Query<Map<String, dynamic>> query = _consumos;
     if (idUsuario != null && idUsuario.isNotEmpty) {
       query = query.where('idUsuario', isEqualTo: idUsuario);
@@ -63,6 +78,9 @@ class FirestoreKutralKoRepository implements KutralKoRepository {
 
   @override
   Stream<List<Pago>> watchPagos({String? idUsuario}) {
+    if (idUsuario != null && idUsuario.startsWith('__sin_')) {
+      return Stream.value(const []);
+    }
     Query<Map<String, dynamic>> query = _pagos;
     if (idUsuario != null && idUsuario.isNotEmpty) {
       query = query.where('idUsuario', isEqualTo: idUsuario);
@@ -72,6 +90,58 @@ class FirestoreKutralKoRepository implements KutralKoRepository {
         .orderBy('fechaPago', descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs.map(_pagoFromDoc).toList());
+  }
+
+  @override
+  Stream<List<Trabajador>> watchTrabajadores({String? idTrabajador}) {
+    if (idTrabajador != null && idTrabajador.startsWith('__sin_')) {
+      return Stream.value(const []);
+    }
+    if (idTrabajador != null && idTrabajador.isNotEmpty) {
+      return _trabajadores.doc(idTrabajador).snapshots().map((doc) {
+        if (!doc.exists) {
+          return const <Trabajador>[];
+        }
+        return [_trabajadorFromDoc(doc)];
+      });
+    }
+
+    return _trabajadores
+        .orderBy('nombreTrabajador')
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map(_trabajadorFromDoc).toList());
+  }
+
+  @override
+  Stream<List<Asistencia>> watchAsistencias({String? idTrabajador}) {
+    if (idTrabajador != null && idTrabajador.startsWith('__sin_')) {
+      return Stream.value(const []);
+    }
+    Query<Map<String, dynamic>> query = _asistencias;
+    if (idTrabajador != null && idTrabajador.isNotEmpty) {
+      query = query.where('idTrabajador', isEqualTo: idTrabajador);
+    }
+
+    return query
+        .orderBy('fechaAsistencia', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map(_asistenciaFromDoc).toList());
+  }
+
+  @override
+  Stream<List<ConsumoPersonal>> watchConsumosPersonal({String? idTrabajador}) {
+    if (idTrabajador != null && idTrabajador.startsWith('__sin_')) {
+      return Stream.value(const []);
+    }
+    Query<Map<String, dynamic>> query = _consumosPersonal;
+    if (idTrabajador != null && idTrabajador.isNotEmpty) {
+      query = query.where('idTrabajador', isEqualTo: idTrabajador);
+    }
+
+    return query
+        .orderBy('fechaConsumoPersonal', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map(_consumoPersonalFromDoc).toList());
   }
 
   @override
@@ -105,6 +175,37 @@ class FirestoreKutralKoRepository implements KutralKoRepository {
   Future<void> guardarPago(Pago pago) {
     final doc = pago.idPago.isEmpty ? _pagos.doc() : _pagos.doc(pago.idPago);
     return doc.set(_pagoToMap(pago.copyWith(idPago: doc.id)));
+  }
+
+  @override
+  Future<void> guardarTrabajador(Trabajador trabajador) {
+    final doc = trabajador.idTrabajador.isEmpty
+        ? _trabajadores.doc()
+        : _trabajadores.doc(trabajador.idTrabajador);
+
+    return doc.set(_trabajadorToMap(trabajador.copyWith(idTrabajador: doc.id)));
+  }
+
+  @override
+  Future<void> guardarAsistencia(Asistencia asistencia) {
+    final doc = asistencia.idAsistencia.isEmpty
+        ? _asistencias.doc()
+        : _asistencias.doc(asistencia.idAsistencia);
+
+    return doc.set(_asistenciaToMap(asistencia.copyWith(idAsistencia: doc.id)));
+  }
+
+  @override
+  Future<void> guardarConsumoPersonal(ConsumoPersonal consumoPersonal) {
+    final doc = consumoPersonal.idConsumoPersonal.isEmpty
+        ? _consumosPersonal.doc()
+        : _consumosPersonal.doc(consumoPersonal.idConsumoPersonal);
+
+    return doc.set(
+      _consumoPersonalToMap(
+        consumoPersonal.copyWith(idConsumoPersonal: doc.id),
+      ),
+    );
   }
 
   @override
@@ -213,5 +314,102 @@ Map<String, dynamic> _pagoToMap(Pago pago) {
     'fechaPago': Timestamp.fromDate(pago.fechaPago),
     'notaPago': pago.notaPago,
     'estaAnuladoPago': pago.estaAnuladoPago,
+  };
+}
+
+Trabajador _trabajadorFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+  final data = doc.data() ?? {};
+  return Trabajador(
+    idTrabajador: data['idTrabajador'] as String? ?? doc.id,
+    nombreTrabajador: data['nombreTrabajador'] as String? ?? '',
+    emailTrabajador: data['emailTrabajador'] as String? ?? '',
+    telefonoTrabajador: data['telefonoTrabajador'] as String? ?? '',
+    cargoTrabajador: data['cargoTrabajador'] as String? ?? '',
+    estaActivoTrabajador: data['estaActivoTrabajador'] as bool? ?? true,
+    idPerfil: data['idPerfil'] as String? ?? '',
+  );
+}
+
+Map<String, dynamic> _trabajadorToMap(Trabajador trabajador) {
+  return {
+    'idTrabajador': trabajador.idTrabajador,
+    'nombreTrabajador': trabajador.nombreTrabajador,
+    'emailTrabajador': trabajador.emailTrabajador,
+    'telefonoTrabajador': trabajador.telefonoTrabajador,
+    'cargoTrabajador': trabajador.cargoTrabajador,
+    'estaActivoTrabajador': trabajador.estaActivoTrabajador,
+    'idPerfil': trabajador.idPerfil,
+  };
+}
+
+Asistencia _asistenciaFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+  final data = doc.data() ?? {};
+  final horaEntrada =
+      (data['horaEntrada'] as Timestamp?)?.toDate() ?? DateTime.now();
+  return Asistencia(
+    idAsistencia: data['idAsistencia'] as String? ?? doc.id,
+    idTrabajador: data['idTrabajador'] as String? ?? '',
+    fechaAsistencia:
+        (data['fechaAsistencia'] as Timestamp?)?.toDate() ?? horaEntrada,
+    horaEntrada: horaEntrada,
+    horaSalida: (data['horaSalida'] as Timestamp?)?.toDate(),
+    minutosTrabajados: data['minutosTrabajados'] as int? ?? 0,
+    minutosExtra: data['minutosExtra'] as int? ?? 0,
+    minutosAtraso: data['minutosAtraso'] as int? ?? 0,
+    observacionAsistencia: data['observacionAsistencia'] as String? ?? '',
+    estaCorregidaAsistencia: data['estaCorregidaAsistencia'] as bool? ?? false,
+    estaAnuladaAsistencia: data['estaAnuladaAsistencia'] as bool? ?? false,
+  );
+}
+
+Map<String, dynamic> _asistenciaToMap(Asistencia asistencia) {
+  return {
+    'idAsistencia': asistencia.idAsistencia,
+    'idTrabajador': asistencia.idTrabajador,
+    'fechaAsistencia': Timestamp.fromDate(asistencia.fechaAsistencia),
+    'horaEntrada': Timestamp.fromDate(asistencia.horaEntrada),
+    'horaSalida': asistencia.horaSalida == null
+        ? null
+        : Timestamp.fromDate(asistencia.horaSalida!),
+    'minutosTrabajados': asistencia.minutosTrabajados,
+    'minutosExtra': asistencia.minutosExtra,
+    'minutosAtraso': asistencia.minutosAtraso,
+    'observacionAsistencia': asistencia.observacionAsistencia,
+    'estaCorregidaAsistencia': asistencia.estaCorregidaAsistencia,
+    'estaAnuladaAsistencia': asistencia.estaAnuladaAsistencia,
+  };
+}
+
+ConsumoPersonal _consumoPersonalFromDoc(
+  DocumentSnapshot<Map<String, dynamic>> doc,
+) {
+  final data = doc.data() ?? {};
+  return ConsumoPersonal(
+    idConsumoPersonal: data['idConsumoPersonal'] as String? ?? doc.id,
+    idTrabajador: data['idTrabajador'] as String? ?? '',
+    idProducto: data['idProducto'] as String? ?? '',
+    nombreProductoSnapshot: data['nombreProductoSnapshot'] as String? ?? '',
+    montoConsumoPersonal: data['montoConsumoPersonal'] as int? ?? 0,
+    fechaConsumoPersonal:
+        (data['fechaConsumoPersonal'] as Timestamp?)?.toDate() ??
+        DateTime.now(),
+    notaConsumoPersonal: data['notaConsumoPersonal'] as String? ?? '',
+    estaAnuladoConsumoPersonal:
+        data['estaAnuladoConsumoPersonal'] as bool? ?? false,
+  );
+}
+
+Map<String, dynamic> _consumoPersonalToMap(ConsumoPersonal consumoPersonal) {
+  return {
+    'idConsumoPersonal': consumoPersonal.idConsumoPersonal,
+    'idTrabajador': consumoPersonal.idTrabajador,
+    'idProducto': consumoPersonal.idProducto,
+    'nombreProductoSnapshot': consumoPersonal.nombreProductoSnapshot,
+    'montoConsumoPersonal': consumoPersonal.montoConsumoPersonal,
+    'fechaConsumoPersonal': Timestamp.fromDate(
+      consumoPersonal.fechaConsumoPersonal,
+    ),
+    'notaConsumoPersonal': consumoPersonal.notaConsumoPersonal,
+    'estaAnuladoConsumoPersonal': consumoPersonal.estaAnuladoConsumoPersonal,
   };
 }

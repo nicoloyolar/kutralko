@@ -27,6 +27,34 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "asistencias",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "idTrabajador",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaAsistencia",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "consumosPersonal",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "idTrabajador",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fechaConsumoPersonal",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -24,7 +24,7 @@ class KutralKoApp extends StatelessWidget {
       theme: KutralKoTheme.light,
       home: requireAuthentication
           ? _AuthGate(repository: repository)
-          : DashboardScreen(repository: repository),
+          : DashboardScreen(repository: repository, watchRemoteProfile: false),
     );
   }
 }

@@ -28,10 +28,25 @@ service cloud.firestore {
       return profile().data.idUsuarioPerfil;
     }
 
+    function linkedWorkerId() {
+      return profile().data.idTrabajadorPerfil;
+    }
+
     function isLinkedUser(idUsuario) {
       return isActive() &&
         linkedUserId() is string &&
         linkedUserId() == idUsuario;
+    }
+
+    function isWorker() {
+      return isActive() &&
+        profile().data.rolPerfil == 'trabajador';
+    }
+
+    function isLinkedWorker(idTrabajador) {
+      return isWorker() &&
+        linkedWorkerId() is string &&
+        linkedWorkerId() == idTrabajador;
     }
 
     function validClientProfile(uid) {
@@ -68,6 +83,29 @@ service cloud.firestore {
 
     match /pagos/{document} {
       allow read: if isAdmin() || isLinkedUser(resource.data.idUsuario);
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /trabajadores/{document} {
+      allow read: if isAdmin() || isLinkedWorker(document);
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /asistencias/{document} {
+      allow read: if isAdmin() || isLinkedWorker(resource.data.idTrabajador);
+      allow create: if isAdmin() ||
+        (isWorker() && request.resource.data.idTrabajador == linkedWorkerId());
+      allow update: if isAdmin() ||
+        (isWorker() &&
+          resource.data.idTrabajador == linkedWorkerId() &&
+          request.resource.data.idTrabajador == linkedWorkerId());
+      allow delete: if false;
+    }
+
+    match /consumosPersonal/{document} {
+      allow read: if isAdmin() || isLinkedWorker(resource.data.idTrabajador);
       allow create, update: if isAdmin();
       allow delete: if false;
     }

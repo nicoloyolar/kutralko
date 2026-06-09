@@ -1,21 +1,33 @@
 import 'dart:async';
 
+import 'package:excel/excel.dart' as xlsx;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 import '../../../app/theme.dart';
 import '../../../core/data/kutral_ko_repository.dart';
+import '../../../core/export/file_downloader.dart';
 import '../../../core/formatting/currency_formatter.dart';
 import '../../consumos/domain/consumo.dart';
 import '../../pagos/domain/pago.dart';
+import '../../personal/domain/asistencia.dart';
+import '../../personal/domain/consumo_personal.dart';
+import '../../personal/domain/trabajador.dart';
 import '../../productos/domain/producto.dart';
 import '../../usuarios/domain/usuario.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key, required this.repository});
+  const DashboardScreen({
+    super.key,
+    required this.repository,
+    this.watchRemoteProfile = true,
+  });
 
   final KutralKoRepository repository;
+  final bool watchRemoteProfile;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -26,15 +38,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final List<Producto> _productos = [];
   final List<Consumo> _consumos = [];
   final List<Pago> _pagos = [];
+  final List<Trabajador> _trabajadores = [];
+  final List<Asistencia> _asistencias = [];
+  final List<ConsumoPersonal> _consumosPersonal = [];
   final List<StreamSubscription<dynamic>> _dataSubscriptions = [];
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
-      _perfilSubscription;
+  _perfilSubscription;
 
   int _selectedIndex = 0;
   bool _isPerfilLoading = true;
   String _rolPerfil = 'cliente';
   String _emailPerfil = '';
   String? _idUsuarioPerfil;
+  String? _idTrabajadorPerfil;
   late DateTime _mesSeleccionado;
 
   @override
@@ -42,7 +58,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     final now = DateTime.now();
     _mesSeleccionado = DateTime(now.year, now.month);
-    _watchPerfil();
+    if (widget.watchRemoteProfile) {
+      _watchPerfil();
+    } else {
+      _isPerfilLoading = false;
+      _rolPerfil = 'administrador';
+      _restartDataStreams(idUsuario: null, idTrabajador: null);
+    }
   }
 
   void _watchPerfil() {
@@ -56,23 +78,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .collection('perfiles')
         .doc(user.uid)
         .snapshots()
-        .listen((snapshot) {
-          final data = snapshot.data() ?? {};
-          final rolPerfil = data['rolPerfil'] as String? ?? 'cliente';
-          final idUsuarioPerfil = data['idUsuarioPerfil'] as String?;
-          setState(() {
-            _rolPerfil = rolPerfil;
-            _emailPerfil = data['emailPerfil'] as String? ?? user.email ?? '';
-            _idUsuarioPerfil = idUsuarioPerfil;
-            _isPerfilLoading = false;
-          });
-          _restartDataStreams(
-            idUsuario: rolPerfil == 'administrador' ? null : idUsuarioPerfil,
-          );
-        }, onError: (error) {
-          setState(() => _isPerfilLoading = false);
-          _handleStreamError(error);
-        });
+        .listen(
+          (snapshot) {
+            final data = snapshot.data() ?? {};
+            final rolPerfil = data['rolPerfil'] as String? ?? 'cliente';
+            final idUsuarioPerfil = data['idUsuarioPerfil'] as String?;
+            final idTrabajadorPerfil = data['idTrabajadorPerfil'] as String?;
+            setState(() {
+              _rolPerfil = rolPerfil;
+              _emailPerfil = data['emailPerfil'] as String? ?? user.email ?? '';
+              _idUsuarioPerfil = idUsuarioPerfil;
+              _idTrabajadorPerfil = idTrabajadorPerfil;
+              _isPerfilLoading = false;
+            });
+            _restartDataStreams(
+              idUsuario: rolPerfil == 'administrador'
+                  ? null
+                  : rolPerfil == 'cliente'
+                  ? idUsuarioPerfil
+                  : '__sin_cliente__',
+              idTrabajador: rolPerfil == 'administrador'
+                  ? null
+                  : rolPerfil == 'trabajador'
+                  ? idTrabajadorPerfil
+                  : '__sin_trabajador__',
+            );
+          },
+          onError: (error) {
+            setState(() => _isPerfilLoading = false);
+            _handleStreamError(error);
+          },
+        );
   }
 
   @override
@@ -84,7 +120,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 
-  void _restartDataStreams({required String? idUsuario}) {
+  void _restartDataStreams({required String? idUsuario, String? idTrabajador}) {
     for (final subscription in _dataSubscriptions) {
       subscription.cancel();
     }
@@ -95,9 +131,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _productos.clear();
       _consumos.clear();
       _pagos.clear();
+      _trabajadores.clear();
+      _asistencias.clear();
+      _consumosPersonal.clear();
     });
 
-    if (!_puedeAdministrar && (idUsuario == null || idUsuario.isEmpty)) {
+    if (_rolPerfil == 'cliente' && (idUsuario == null || idUsuario.isEmpty)) {
       _dataSubscriptions.add(
         widget.repository.watchProductos().listen((productos) {
           setState(() {
@@ -112,7 +151,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     _dataSubscriptions
       ..add(
-        widget.repository.watchUsuarios(idUsuario: idUsuario).listen((usuarios) {
+        widget.repository.watchUsuarios(idUsuario: idUsuario).listen((
+          usuarios,
+        ) {
           setState(() {
             _usuarios
               ..clear()
@@ -130,7 +171,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }, onError: _handleStreamError),
       )
       ..add(
-        widget.repository.watchConsumos(idUsuario: idUsuario).listen((consumos) {
+        widget.repository.watchConsumos(idUsuario: idUsuario).listen((
+          consumos,
+        ) {
           setState(() {
             _consumos
               ..clear()
@@ -146,6 +189,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ..addAll(pagos);
           });
         }, onError: _handleStreamError),
+      )
+      ..add(
+        widget.repository.watchTrabajadores(idTrabajador: idTrabajador).listen((
+          trabajadores,
+        ) {
+          setState(() {
+            _trabajadores
+              ..clear()
+              ..addAll(trabajadores);
+          });
+        }, onError: _handleStreamError),
+      )
+      ..add(
+        widget.repository.watchAsistencias(idTrabajador: idTrabajador).listen((
+          asistencias,
+        ) {
+          setState(() {
+            _asistencias
+              ..clear()
+              ..addAll(asistencias);
+          });
+        }, onError: _handleStreamError),
+      )
+      ..add(
+        widget.repository
+            .watchConsumosPersonal(idTrabajador: idTrabajador)
+            .listen((consumosPersonal) {
+              setState(() {
+                _consumosPersonal
+                  ..clear()
+                  ..addAll(consumosPersonal);
+              });
+            }, onError: _handleStreamError),
       );
   }
 
@@ -183,7 +259,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return const [];
     }
 
-    return _usuarios.where((usuario) => usuario.idUsuario == idUsuario).toList();
+    return _usuarios
+        .where((usuario) => usuario.idUsuario == idUsuario)
+        .toList();
   }
 
   List<Consumo> get _consumosMesPermitidos {
@@ -212,6 +290,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     return _pagosMes.where((pago) => pago.idUsuario == idUsuario).toList();
+  }
+
+  List<Asistencia> get _asistenciasMes {
+    return _asistencias
+        .where((asistencia) => _isInSelectedMonth(asistencia.fechaAsistencia))
+        .toList();
+  }
+
+  List<ConsumoPersonal> get _consumosPersonalMes {
+    return _consumosPersonal
+        .where((consumo) => _isInSelectedMonth(consumo.fechaConsumoPersonal))
+        .toList();
+  }
+
+  List<Trabajador> get _trabajadoresActivos {
+    return _trabajadores
+        .where((trabajador) => trabajador.estaActivoTrabajador)
+        .toList();
+  }
+
+  Trabajador? get _trabajadorPerfil {
+    final idTrabajador = _idTrabajadorPerfil;
+    if (idTrabajador == null || idTrabajador.isEmpty) {
+      return null;
+    }
+
+    for (final trabajador in _trabajadores) {
+      if (trabajador.idTrabajador == idTrabajador) {
+        return trabajador;
+      }
+    }
+    return null;
+  }
+
+  bool get _esTrabajador {
+    return _rolPerfil == 'trabajador';
   }
 
   List<Usuario> get _usuariosActivos {
@@ -340,6 +454,157 @@ class _DashboardScreenState extends State<DashboardScreen> {
     await _save(() => widget.repository.guardarPago(result));
   }
 
+  Future<void> _openTrabajadorForm([Trabajador? trabajador]) async {
+    final result = await showModalBottomSheet<Trabajador>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _TrabajadorFormSheet(trabajador: trabajador),
+    );
+
+    if (result == null) {
+      return;
+    }
+
+    await _save(() => widget.repository.guardarTrabajador(result));
+  }
+
+  Future<void> _openConsumoPersonalForm() async {
+    if (_trabajadoresActivos.isEmpty || _productosActivos.isEmpty) {
+      _showSnack('Necesitas trabajadores y productos activos.');
+      return;
+    }
+
+    final result = await showModalBottomSheet<ConsumoPersonal>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _ConsumoPersonalFormSheet(
+        trabajadores: _trabajadoresActivos,
+        productos: _productosActivos,
+      ),
+    );
+
+    if (result == null) {
+      return;
+    }
+
+    await _save(() => widget.repository.guardarConsumoPersonal(result));
+  }
+
+  Future<void> _editarAsistencia(Asistencia asistencia) async {
+    final result = await showModalBottomSheet<Asistencia>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _AsistenciaEditFormSheet(asistencia: asistencia),
+    );
+
+    if (result == null) {
+      return;
+    }
+
+    await _save(() async {
+      await widget.repository.guardarAsistencia(result);
+      await _registrarAuditoriaPersonal(
+        accion: 'corregir',
+        tipoMovimiento: 'asistencia',
+        idMovimiento: result.idAsistencia,
+        idTrabajadorMovimiento: result.idTrabajador,
+      );
+    });
+  }
+
+  Future<void> _anularConsumoPersonal(ConsumoPersonal consumo) async {
+    final confirmed = await _confirmAnulacion(
+      title: 'Anular consumo personal',
+      message:
+          'Este consumo seguira visible en el historial, pero dejara de afectar el descuento estimado.',
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    await _save(() async {
+      await widget.repository.guardarConsumoPersonal(
+        consumo.copyWith(estaAnuladoConsumoPersonal: true),
+      );
+      await _registrarAuditoriaPersonal(
+        accion: 'anular',
+        tipoMovimiento: 'consumoPersonal',
+        idMovimiento: consumo.idConsumoPersonal,
+        idTrabajadorMovimiento: consumo.idTrabajador,
+      );
+    });
+  }
+
+  Future<void> _iniciarTurno() async {
+    final trabajador = _trabajadorPerfil;
+    if (trabajador == null) {
+      _showSnack('Tu perfil aun no esta vinculado a un trabajador.');
+      return;
+    }
+
+    if (_asistenciaAbierta(trabajador.idTrabajador) != null) {
+      _showSnack('Ya tienes un turno en curso.');
+      return;
+    }
+
+    final now = DateTime.now();
+    await _save(
+      () => widget.repository.guardarAsistencia(
+        Asistencia(
+          idAsistencia: '',
+          idTrabajador: trabajador.idTrabajador,
+          fechaAsistencia: DateTime(now.year, now.month, now.day),
+          horaEntrada: now,
+          horaSalida: null,
+          minutosTrabajados: 0,
+          minutosExtra: 0,
+          minutosAtraso: 0,
+          observacionAsistencia: '',
+          estaCorregidaAsistencia: false,
+          estaAnuladaAsistencia: false,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _finalizarTurno() async {
+    final trabajador = _trabajadorPerfil;
+    if (trabajador == null) {
+      _showSnack('Tu perfil aun no esta vinculado a un trabajador.');
+      return;
+    }
+
+    final asistencia = _asistenciaAbierta(trabajador.idTrabajador);
+    if (asistencia == null) {
+      _showSnack('No tienes un turno en curso.');
+      return;
+    }
+
+    final now = DateTime.now();
+    final minutos = now.difference(asistencia.horaEntrada).inMinutes;
+    await _save(
+      () => widget.repository.guardarAsistencia(
+        asistencia.copyWith(
+          horaSalida: now,
+          minutosTrabajados: minutos < 0 ? 0 : minutos,
+        ),
+      ),
+    );
+  }
+
+  Asistencia? _asistenciaAbierta(String idTrabajador) {
+    for (final asistencia in _asistencias) {
+      if (asistencia.idTrabajador == idTrabajador && asistencia.estaAbierta) {
+        return asistencia;
+      }
+    }
+    return null;
+  }
+
   Future<void> _save(Future<void> Function() action) async {
     try {
       await action();
@@ -433,10 +698,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (context) => _PagoEditFormSheet(
-        pago: pago,
-        usuarios: _usuarios,
-      ),
+      builder: (context) => _PagoEditFormSheet(pago: pago, usuarios: _usuarios),
     );
 
     if (result == null) {
@@ -466,9 +728,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     await _save(() async {
-      await widget.repository.guardarPago(
-        pago.copyWith(estaAnuladoPago: true),
-      );
+      await widget.repository.guardarPago(pago.copyWith(estaAnuladoPago: true));
       await _registrarAuditoria(
         accion: 'anular',
         tipoMovimiento: 'pago',
@@ -495,6 +755,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
+  Future<void> _registrarAuditoriaPersonal({
+    required String accion,
+    required String tipoMovimiento,
+    required String idMovimiento,
+    required String idTrabajadorMovimiento,
+  }) {
+    final user = FirebaseAuth.instance.currentUser;
+    return widget.repository.registrarAuditoria({
+      'accionAuditoria': accion,
+      'tipoMovimientoAuditoria': tipoMovimiento,
+      'idMovimientoAuditoria': idMovimiento,
+      'idTrabajadorMovimientoAuditoria': idTrabajadorMovimiento,
+      'idPerfilAuditoria': user?.uid ?? '',
+      'emailPerfilAuditoria': user?.email ?? _emailPerfil,
+    });
+  }
+
   Future<void> _openConfiguracion() async {
     if (!_puedeAdministrar) {
       _showSnack('Solo administradores pueden abrir configuracion.');
@@ -505,7 +782,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (context) => _PerfilLinkSheet(usuarios: _usuarios),
+      builder: (context) =>
+          _PerfilLinkSheet(usuarios: _usuarios, trabajadores: _trabajadores),
     );
   }
 
@@ -583,8 +861,277 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Future<void> _openTrabajadorDetail(Trabajador trabajador) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) => _TrabajadorDetailSheet(
+        trabajador: trabajador,
+        asistencias: _asistenciasMes
+            .where(
+              (asistencia) =>
+                  asistencia.idTrabajador == trabajador.idTrabajador,
+            )
+            .toList(),
+        consumosPersonal: _consumosPersonalMes
+            .where((consumo) => consumo.idTrabajador == trabajador.idTrabajador)
+            .toList(),
+        asistenciaAbierta: _asistenciaAbierta(trabajador.idTrabajador),
+        onEditarTrabajador: () {
+          Navigator.of(sheetContext).pop();
+          _openTrabajadorForm(trabajador);
+        },
+        onEditarAsistencia: _editarAsistencia,
+        onAnularConsumoPersonal: _anularConsumoPersonal,
+      ),
+    );
+  }
+
+  List<_PersonalReportRow> _buildPersonalReportRows() {
+    return _trabajadoresActivos.map((trabajador) {
+      final asistencias = _asistenciasMes
+          .where(
+            (asistencia) =>
+                asistencia.idTrabajador == trabajador.idTrabajador &&
+                !asistencia.estaAnuladaAsistencia,
+          )
+          .toList();
+      final consumos = _consumosPersonalMes
+          .where(
+            (consumo) =>
+                consumo.idTrabajador == trabajador.idTrabajador &&
+                !consumo.estaAnuladoConsumoPersonal,
+          )
+          .toList();
+      final minutosTrabajados = asistencias.fold(
+        0,
+        (total, asistencia) => total + asistencia.minutosTrabajados,
+      );
+      final minutosExtra = asistencias.fold(
+        0,
+        (total, asistencia) => total + asistencia.minutosExtra,
+      );
+      final atrasos = asistencias
+          .where((asistencia) => asistencia.minutosAtraso > 0)
+          .length;
+      final consumoTotal = consumos.fold(
+        0,
+        (total, consumo) => total + consumo.montoConsumoPersonal,
+      );
+      final enTurno = _asistenciaAbierta(trabajador.idTrabajador) != null;
+
+      return _PersonalReportRow(
+        trabajador: trabajador,
+        minutosTrabajados: minutosTrabajados,
+        minutosExtra: minutosExtra,
+        atrasos: atrasos,
+        consumoTotal: consumoTotal,
+        enTurno: enTurno,
+      );
+    }).toList();
+  }
+
+  Future<void> _exportPersonalPdf() async {
+    final rows = _buildPersonalReportRows();
+    final mesLabel = _monthLabel(_mesSeleccionado);
+    final totalMinutos = rows.fold(
+      0,
+      (total, row) => total + row.minutosTrabajados,
+    );
+    final totalConsumos = rows.fold(
+      0,
+      (total, row) => total + row.consumoTotal,
+    );
+    final document = pw.Document();
+
+    document.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(28),
+        build: (context) => [
+          pw.Text(
+            'Kutral Ko - Reporte mensual de personal',
+            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Text('Periodo: $mesLabel'),
+          pw.SizedBox(height: 16),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text('Horas totales: ${_formatMinutes(totalMinutos)}'),
+              pw.Text('Descuentos: ${CurrencyFormatter.clp(totalConsumos)}'),
+            ],
+          ),
+          pw.SizedBox(height: 16),
+          pw.TableHelper.fromTextArray(
+            headers: const [
+              'Trabajador',
+              'Cargo',
+              'Horas',
+              'Extras',
+              'Atrasos',
+              'Consumo',
+              'Estado',
+            ],
+            data: [
+              for (final row in rows)
+                [
+                  row.trabajador.nombreTrabajador,
+                  row.trabajador.cargoTrabajador,
+                  _formatMinutes(row.minutosTrabajados),
+                  _formatMinutes(row.minutosExtra),
+                  row.atrasos.toString(),
+                  CurrencyFormatter.clp(row.consumoTotal),
+                  row.enTurno ? 'En turno' : 'Fuera',
+                ],
+            ],
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            headerDecoration: const pw.BoxDecoration(
+              color: PdfColor.fromInt(0xFFE9DDC7),
+            ),
+            cellStyle: const pw.TextStyle(fontSize: 9),
+            cellAlignment: pw.Alignment.centerLeft,
+          ),
+        ],
+      ),
+    );
+
+    await _downloadReport(
+      bytes: await document.save(),
+      fileName: 'reporte_personal_${_reportMonthSlug()}.pdf',
+      mimeType: 'application/pdf',
+    );
+  }
+
+  Future<void> _exportPersonalExcel() async {
+    final rows = _buildPersonalReportRows();
+    final excel = xlsx.Excel.createExcel();
+    const sheetName = 'Reporte personal';
+    final sheet = excel[sheetName];
+    excel.setDefaultSheet(sheetName);
+    if (excel.sheets.containsKey('Sheet1')) {
+      excel.delete('Sheet1');
+    }
+
+    void writeText(int row, int column, String value) {
+      sheet
+          .cell(
+            xlsx.CellIndex.indexByColumnRow(columnIndex: column, rowIndex: row),
+          )
+          .value = xlsx.TextCellValue(
+        value,
+      );
+    }
+
+    void writeInt(int row, int column, int value) {
+      sheet
+          .cell(
+            xlsx.CellIndex.indexByColumnRow(columnIndex: column, rowIndex: row),
+          )
+          .value = xlsx.IntCellValue(
+        value,
+      );
+    }
+
+    writeText(0, 0, 'Kutral Ko - Reporte mensual de personal');
+    writeText(1, 0, 'Periodo');
+    writeText(1, 1, _monthLabel(_mesSeleccionado));
+
+    const headers = [
+      'Trabajador',
+      'Correo',
+      'Cargo',
+      'Horas trabajadas',
+      'Minutos trabajados',
+      'Horas extra',
+      'Minutos extra',
+      'Atrasos',
+      'Consumo / descuento',
+      'Estado',
+    ];
+
+    for (var index = 0; index < headers.length; index++) {
+      writeText(3, index, headers[index]);
+    }
+
+    for (var index = 0; index < rows.length; index++) {
+      final row = rows[index];
+      final excelRow = index + 4;
+      writeText(excelRow, 0, row.trabajador.nombreTrabajador);
+      writeText(excelRow, 1, row.trabajador.emailTrabajador);
+      writeText(excelRow, 2, row.trabajador.cargoTrabajador);
+      writeText(excelRow, 3, _formatMinutes(row.minutosTrabajados));
+      writeInt(excelRow, 4, row.minutosTrabajados);
+      writeText(excelRow, 5, _formatMinutes(row.minutosExtra));
+      writeInt(excelRow, 6, row.minutosExtra);
+      writeInt(excelRow, 7, row.atrasos);
+      writeInt(excelRow, 8, row.consumoTotal);
+      writeText(excelRow, 9, row.enTurno ? 'En turno' : 'Fuera');
+    }
+
+    final bytes = excel.encode();
+    if (bytes == null) {
+      _showSnack('No se pudo generar el Excel.');
+      return;
+    }
+
+    await _downloadReport(
+      bytes: bytes,
+      fileName: 'reporte_personal_${_reportMonthSlug()}.xlsx',
+      mimeType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
+
+  Future<void> _downloadReport({
+    required List<int> bytes,
+    required String fileName,
+    required String mimeType,
+  }) async {
+    try {
+      await downloadBytes(bytes: bytes, fileName: fileName, mimeType: mimeType);
+    } on UnsupportedError catch (error) {
+      _showSnack(error.message ?? 'Descarga disponible desde panel web.');
+    } on Object catch (error) {
+      _showSnack('No se pudo descargar el reporte: $error');
+    }
+  }
+
+  String _reportMonthSlug() {
+    return '${_mesSeleccionado.year}_${_mesSeleccionado.month.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
+    const destinations = [
+      _DashboardDestination(
+        icon: Icons.dashboard_outlined,
+        selectedIcon: Icons.dashboard_rounded,
+        label: 'Inicio',
+      ),
+      _DashboardDestination(
+        icon: Icons.people_alt_outlined,
+        selectedIcon: Icons.people_alt_rounded,
+        label: 'Clientes',
+      ),
+      _DashboardDestination(
+        icon: Icons.local_dining_outlined,
+        selectedIcon: Icons.local_dining_rounded,
+        label: 'Carta',
+      ),
+      _DashboardDestination(
+        icon: Icons.receipt_long_outlined,
+        selectedIcon: Icons.receipt_long_rounded,
+        label: 'Cuenta',
+      ),
+      _DashboardDestination(
+        icon: Icons.badge_outlined,
+        selectedIcon: Icons.badge_rounded,
+        label: 'Personal',
+      ),
+    ];
     final pages = [
       _HomeView(
         usuarios: _usuariosPermitidos,
@@ -643,7 +1190,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
               }
             : null,
       ),
+      _PersonalView(
+        trabajadores: _trabajadoresActivos,
+        asistencias: _asistenciasMes,
+        consumosPersonal: _consumosPersonalMes,
+        trabajadorPerfil: _trabajadorPerfil,
+        puedeAdministrar: _puedeAdministrar,
+        esTrabajador: _esTrabajador,
+        mesLabel: _monthLabel(_mesSeleccionado),
+        asistenciaAbierta: _trabajadorPerfil == null
+            ? null
+            : _asistenciaAbierta(_trabajadorPerfil!.idTrabajador),
+        onNuevoTrabajador: _puedeAdministrar
+            ? () => _openTrabajadorForm()
+            : null,
+        onRegistrarConsumo: _puedeAdministrar ? _openConsumoPersonalForm : null,
+        onOpenTrabajador: _puedeAdministrar ? _openTrabajadorDetail : null,
+        onExportPdf: _puedeAdministrar ? _exportPersonalPdf : null,
+        onExportExcel: _puedeAdministrar ? _exportPersonalExcel : null,
+        onIniciarTurno: _esTrabajador ? _iniciarTurno : null,
+        onFinalizarTurno: _esTrabajador ? _finalizarTurno : null,
+      ),
     ];
+    final isWidePanel = MediaQuery.sizeOf(context).width >= 920;
 
     return Scaffold(
       appBar: AppBar(
@@ -691,43 +1260,286 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            _PerfilBanner(
-              isLoading: _isPerfilLoading,
-              rolPerfil: _rolPerfil,
-              emailPerfil: _emailPerfil,
-              idUsuarioPerfil: _idUsuarioPerfil,
-            ),
-            Expanded(child: pages[_selectedIndex]),
-          ],
-        ),
+        child: isWidePanel
+            ? _WebPanelShell(
+                destinations: destinations,
+                selectedIndex: _selectedIndex,
+                onDestinationSelected: (index) =>
+                    setState(() => _selectedIndex = index),
+                rolPerfil: _rolPerfil,
+                emailPerfil: _emailPerfil,
+                isLoading: _isPerfilLoading,
+                idUsuarioPerfil: _idUsuarioPerfil,
+                idTrabajadorPerfil: _idTrabajadorPerfil,
+                child: pages[_selectedIndex],
+              )
+            : Column(
+                children: [
+                  _PerfilBanner(
+                    isLoading: _isPerfilLoading,
+                    rolPerfil: _rolPerfil,
+                    emailPerfil: _emailPerfil,
+                    idUsuarioPerfil: _idUsuarioPerfil,
+                    idTrabajadorPerfil: _idTrabajadorPerfil,
+                  ),
+                  Expanded(child: pages[_selectedIndex]),
+                ],
+              ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) =>
-            setState(() => _selectedIndex = index),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard_rounded),
-            label: 'Inicio',
+      bottomNavigationBar: isWidePanel
+          ? null
+          : NavigationBar(
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: (index) =>
+                  setState(() => _selectedIndex = index),
+              destinations: [
+                for (final destination in destinations)
+                  NavigationDestination(
+                    icon: Icon(destination.icon),
+                    selectedIcon: Icon(destination.selectedIcon),
+                    label: destination.label,
+                  ),
+              ],
+            ),
+    );
+  }
+}
+
+class _DashboardDestination {
+  const _DashboardDestination({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+}
+
+class _PersonalReportRow {
+  const _PersonalReportRow({
+    required this.trabajador,
+    required this.minutosTrabajados,
+    required this.minutosExtra,
+    required this.atrasos,
+    required this.consumoTotal,
+    required this.enTurno,
+  });
+
+  final Trabajador trabajador;
+  final int minutosTrabajados;
+  final int minutosExtra;
+  final int atrasos;
+  final int consumoTotal;
+  final bool enTurno;
+}
+
+class _WebPanelShell extends StatelessWidget {
+  const _WebPanelShell({
+    required this.destinations,
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+    required this.rolPerfil,
+    required this.emailPerfil,
+    required this.isLoading,
+    required this.idUsuarioPerfil,
+    required this.idTrabajadorPerfil,
+    required this.child,
+  });
+
+  final List<_DashboardDestination> destinations;
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
+  final String rolPerfil;
+  final String emailPerfil;
+  final bool isLoading;
+  final String? idUsuarioPerfil;
+  final String? idTrabajadorPerfil;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final isAdmin = rolPerfil == 'administrador';
+
+    return Row(
+      children: [
+        Container(
+          width: 284,
+          color: KutralKoColors.carbon,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+                child: _WebRoleCard(
+                  isLoading: isLoading,
+                  isAdmin: isAdmin,
+                  emailPerfil: emailPerfil,
+                  idUsuarioPerfil: idUsuarioPerfil,
+                  idTrabajadorPerfil: idTrabajadorPerfil,
+                ),
+              ),
+              Expanded(
+                child: NavigationRail(
+                  extended: true,
+                  backgroundColor: KutralKoColors.carbon,
+                  indicatorColor: KutralKoColors.gold.withValues(alpha: 0.18),
+                  selectedIndex: selectedIndex,
+                  onDestinationSelected: onDestinationSelected,
+                  selectedIconTheme: const IconThemeData(
+                    color: KutralKoColors.gold,
+                  ),
+                  unselectedIconTheme: const IconThemeData(
+                    color: KutralKoColors.smoke,
+                  ),
+                  selectedLabelTextStyle: const TextStyle(
+                    color: KutralKoColors.gold,
+                    fontWeight: FontWeight.w900,
+                  ),
+                  unselectedLabelTextStyle: const TextStyle(
+                    color: KutralKoColors.smoke,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  destinations: [
+                    for (final destination in destinations)
+                      NavigationRailDestination(
+                        icon: Icon(destination.icon),
+                        selectedIcon: Icon(destination.selectedIcon),
+                        label: Text(
+                          _panelLabel(destination.label, isAdmin: isAdmin),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+                child: Text(
+                  isAdmin
+                      ? 'Responsabilidad: administrar clientes, carta, cargas, pagos y permisos.'
+                      : 'Responsabilidad: revisar tu cuenta, consumos, pagos y saldo asociado.',
+                  style: TextStyle(
+                    color: KutralKoColors.smoke.withValues(alpha: 0.82),
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.people_alt_outlined),
-            selectedIcon: Icon(Icons.people_alt_rounded),
-            label: 'Clientes',
+        ),
+        Expanded(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1180),
+              child: Column(
+                children: [
+                  _PerfilBanner(
+                    isLoading: isLoading,
+                    rolPerfil: rolPerfil,
+                    emailPerfil: emailPerfil,
+                    idUsuarioPerfil: idUsuarioPerfil,
+                    idTrabajadorPerfil: idTrabajadorPerfil,
+                  ),
+                  Expanded(child: child),
+                ],
+              ),
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.local_dining_outlined),
-            selectedIcon: Icon(Icons.local_dining_rounded),
-            label: 'Carta',
+        ),
+      ],
+    );
+  }
+
+  String _panelLabel(String label, {required bool isAdmin}) {
+    if (isAdmin) {
+      return label;
+    }
+
+    return switch (label) {
+      'Clientes' => 'Mi cuenta',
+      'Cuenta' => 'Mi historial',
+      _ => label,
+    };
+  }
+}
+
+class _WebRoleCard extends StatelessWidget {
+  const _WebRoleCard({
+    required this.isLoading,
+    required this.isAdmin,
+    required this.emailPerfil,
+    required this.idUsuarioPerfil,
+    required this.idTrabajadorPerfil,
+  });
+
+  final bool isLoading;
+  final bool isAdmin;
+  final String emailPerfil;
+  final String? idUsuarioPerfil;
+  final String? idTrabajadorPerfil;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: KutralKoColors.gold.withValues(alpha: 0.26)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isAdmin
+                    ? Icons.admin_panel_settings_rounded
+                    : Icons.person_rounded,
+                color: KutralKoColors.gold,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  isLoading
+                      ? 'Verificando'
+                      : isAdmin
+                      ? 'Panel administrador'
+                      : 'Panel operativo',
+                  style: const TextStyle(
+                    color: KutralKoColors.ivory,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long_rounded),
-            label: 'Cuenta',
+          const SizedBox(height: 8),
+          Text(
+            emailPerfil.isEmpty ? 'Sesion activa' : emailPerfil,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: KutralKoColors.smoke,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
           ),
+          if (!isAdmin &&
+              idUsuarioPerfil == null &&
+              idTrabajadorPerfil == null) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Pendiente de vinculacion',
+              style: TextStyle(
+                color: KutralKoColors.gold,
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -740,28 +1552,37 @@ class _PerfilBanner extends StatelessWidget {
     required this.rolPerfil,
     required this.emailPerfil,
     required this.idUsuarioPerfil,
+    required this.idTrabajadorPerfil,
   });
 
   final bool isLoading;
   final String rolPerfil;
   final String emailPerfil;
   final String? idUsuarioPerfil;
+  final String? idTrabajadorPerfil;
 
   @override
   Widget build(BuildContext context) {
     final isAdmin = rolPerfil == 'administrador';
+    final isWorker = rolPerfil == 'trabajador';
     final title = isLoading
         ? 'Verificando perfil'
         : isAdmin
-            ? 'Modo administrador'
-            : 'Modo cliente';
+        ? 'Modo administrador'
+        : isWorker
+        ? 'Modo trabajador'
+        : 'Modo cliente';
     final subtitle = isLoading
         ? 'Cargando permisos reales'
         : isAdmin
-            ? emailPerfil
-            : idUsuarioPerfil == null
-                ? 'Lectura sin cliente vinculado'
-                : emailPerfil;
+        ? emailPerfil
+        : isWorker
+        ? idTrabajadorPerfil == null
+              ? 'Lectura sin trabajador vinculado'
+              : emailPerfil
+        : idUsuarioPerfil == null
+        ? 'Lectura sin cliente vinculado'
+        : emailPerfil;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
@@ -770,13 +1591,17 @@ class _PerfilBanner extends StatelessWidget {
         decoration: BoxDecoration(
           color: KutralKoColors.carbon,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: KutralKoColors.gold.withValues(alpha: 0.24)),
+          border: Border.all(
+            color: KutralKoColors.gold.withValues(alpha: 0.24),
+          ),
         ),
         child: Row(
           children: [
             Icon(
               isAdmin
                   ? Icons.admin_panel_settings_rounded
+                  : isWorker
+                  ? Icons.badge_rounded
                   : Icons.person_rounded,
               color: KutralKoColors.gold,
             ),
@@ -818,14 +1643,15 @@ class _PerfilBanner extends StatelessWidget {
 }
 
 class _PerfilLinkSheet extends StatelessWidget {
-  const _PerfilLinkSheet({required this.usuarios});
+  const _PerfilLinkSheet({required this.usuarios, required this.trabajadores});
 
   final List<Usuario> usuarios;
+  final List<Trabajador> trabajadores;
 
   @override
   Widget build(BuildContext context) {
     return _FormScaffold(
-      title: 'Vincular clientes',
+      title: 'Vincular perfiles',
       child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('perfiles')
@@ -837,30 +1663,137 @@ class _PerfilLinkSheet extends StatelessWidget {
           }
 
           final docs = snapshot.data?.docs ?? [];
-          final perfilesCliente = docs.where((doc) {
-            final data = doc.data();
-            return data['rolPerfil'] == 'cliente';
-          }).toList();
+          final administradores =
+              <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+          final trabajadoresPerfil =
+              <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+          final clientes = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+          final sinVincular = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
 
-          if (perfilesCliente.isEmpty) {
+          for (final doc in docs) {
+            final data = doc.data();
+            final rol = data['rolPerfil'] as String? ?? 'cliente';
+            final tieneCliente =
+                data['idUsuarioPerfil'] is String &&
+                (data['idUsuarioPerfil'] as String).isNotEmpty;
+            final tieneTrabajador =
+                data['idTrabajadorPerfil'] is String &&
+                (data['idTrabajadorPerfil'] as String).isNotEmpty;
+
+            if (rol == 'administrador') {
+              administradores.add(doc);
+            } else if (rol == 'trabajador' && tieneTrabajador) {
+              trabajadoresPerfil.add(doc);
+            } else if (rol == 'cliente' && tieneCliente) {
+              clientes.add(doc);
+            } else {
+              sinVincular.add(doc);
+            }
+          }
+
+          if (docs.isEmpty) {
             return const _EmptyState(
               icon: Icons.person_search_rounded,
-              title: 'Sin perfiles cliente',
-              message: 'Cuando un cliente cree cuenta, aparecera aqui.',
+              title: 'Sin perfiles',
+              message: 'Cuando alguien cree cuenta, aparecera aqui.',
             );
           }
 
           return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final perfil in perfilesCliente)
-                _PerfilLinkTile(
-                  perfilId: perfil.id,
-                  perfil: perfil.data(),
-                  usuarios: usuarios,
-                ),
+              _PerfilSection(
+                title: 'Sin vincular',
+                icon: Icons.link_off_rounded,
+                perfiles: sinVincular,
+                usuarios: usuarios,
+                trabajadores: trabajadores,
+              ),
+              _PerfilSection(
+                title: 'Administradores',
+                icon: Icons.admin_panel_settings_rounded,
+                perfiles: administradores,
+                usuarios: usuarios,
+                trabajadores: trabajadores,
+              ),
+              _PerfilSection(
+                title: 'Trabajadores',
+                icon: Icons.badge_rounded,
+                perfiles: trabajadoresPerfil,
+                usuarios: usuarios,
+                trabajadores: trabajadores,
+              ),
+              _PerfilSection(
+                title: 'Clientes',
+                icon: Icons.person_rounded,
+                perfiles: clientes,
+                usuarios: usuarios,
+                trabajadores: trabajadores,
+              ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _PerfilSection extends StatelessWidget {
+  const _PerfilSection({
+    required this.title,
+    required this.icon,
+    required this.perfiles,
+    required this.usuarios,
+    required this.trabajadores,
+  });
+
+  final String title;
+  final IconData icon;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> perfiles;
+  final List<Usuario> usuarios;
+  final List<Trabajador> trabajadores;
+
+  @override
+  Widget build(BuildContext context) {
+    if (perfiles.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: KutralKoColors.gold, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                perfiles.length.toString(),
+                style: const TextStyle(
+                  color: KutralKoColors.muted,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final perfil in perfiles)
+            _PerfilLinkTile(
+              perfilId: perfil.id,
+              perfil: perfil.data(),
+              usuarios: usuarios,
+              trabajadores: trabajadores,
+            ),
+        ],
       ),
     );
   }
@@ -871,17 +1804,26 @@ class _PerfilLinkTile extends StatelessWidget {
     required this.perfilId,
     required this.perfil,
     required this.usuarios,
+    required this.trabajadores,
   });
 
   final String perfilId;
   final Map<String, dynamic> perfil;
   final List<Usuario> usuarios;
+  final List<Trabajador> trabajadores;
 
   @override
   Widget build(BuildContext context) {
     final idUsuarioPerfil = perfil['idUsuarioPerfil'] as String?;
+    final idTrabajadorPerfil = perfil['idTrabajadorPerfil'] as String?;
+    final rolPerfil = perfil['rolPerfil'] as String? ?? 'cliente';
+    final email = perfil['emailPerfil'] as String? ?? 'Perfil sin correo';
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
     final selectedUsuario = usuarios.where(
       (usuario) => usuario.idUsuario == idUsuarioPerfil,
+    );
+    final selectedTrabajador = trabajadores.where(
+      (trabajador) => trabajador.idTrabajador == idTrabajadorPerfil,
     );
 
     return Card(
@@ -890,9 +1832,54 @@ class _PerfilLinkTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              perfil['emailPerfil'] as String? ?? 'Cliente sin correo',
-              style: const TextStyle(fontWeight: FontWeight.w900),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                _RolePill(rolPerfil: rolPerfil),
+              ],
+            ),
+            if (perfilId == currentUid) ...[
+              const SizedBox(height: 6),
+              const Text(
+                'Tu sesion actual',
+                style: TextStyle(
+                  color: KutralKoColors.muted,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _RoleActionButton(
+                  label: 'Hacer admin',
+                  icon: Icons.admin_panel_settings_rounded,
+                  isSelected: rolPerfil == 'administrador',
+                  onPressed: () => _changeRole(context, 'administrador'),
+                ),
+                _RoleActionButton(
+                  label: 'Hacer trabajador',
+                  icon: Icons.badge_rounded,
+                  isSelected: rolPerfil == 'trabajador',
+                  onPressed: () => _changeRole(context, 'trabajador'),
+                ),
+                _RoleActionButton(
+                  label: 'Hacer cliente',
+                  icon: Icons.person_rounded,
+                  isSelected: rolPerfil == 'cliente',
+                  onPressed: () => _changeRole(context, 'cliente'),
+                ),
+              ],
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
@@ -907,18 +1894,260 @@ class _PerfilLinkTile extends StatelessWidget {
                     child: Text(usuario.nombreUsuario),
                   ),
               ],
-              onChanged: (idUsuario) {
-                FirebaseFirestore.instance
-                    .collection('perfiles')
-                    .doc(perfilId)
-                    .set({'idUsuarioPerfil': idUsuario}, SetOptions(merge: true));
-              },
+              onChanged: (idUsuario) => _linkCliente(context, idUsuario),
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              initialValue: selectedTrabajador.isEmpty
+                  ? null
+                  : selectedTrabajador.first.idTrabajador,
+              decoration: const InputDecoration(
+                labelText: 'Trabajador vinculado',
+              ),
+              items: [
+                for (final trabajador in trabajadores)
+                  DropdownMenuItem(
+                    value: trabajador.idTrabajador,
+                    child: Text(trabajador.nombreTrabajador),
+                  ),
+              ],
+              onChanged: (idTrabajador) =>
+                  _linkTrabajador(context, idTrabajador),
             ),
           ],
         ),
       ),
     );
   }
+
+  Future<void> _changeRole(BuildContext context, String nextRole) async {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final currentRole = perfil['rolPerfil'] as String? ?? 'cliente';
+    if (currentRole == nextRole) {
+      return;
+    }
+
+    if (perfilId == currentUid &&
+        currentRole == 'administrador' &&
+        nextRole != 'administrador') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No puedes quitarte tu propio rol administrador.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await _confirmProfileAction(
+      context: context,
+      title: 'Cambiar rol',
+      message:
+          'El perfil pasara de ${_roleLabel(currentRole)} a ${_roleLabel(nextRole)}.',
+    );
+    if (!confirmed) {
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
+
+    await _updateProfile(context, {
+      'rolPerfil': nextRole,
+      if (nextRole == 'administrador') ...{
+        'idUsuarioPerfil': FieldValue.delete(),
+        'idTrabajadorPerfil': FieldValue.delete(),
+      },
+    }, action: 'cambiar_rol_$nextRole');
+  }
+
+  Future<void> _linkCliente(BuildContext context, String? idUsuario) async {
+    if (idUsuario == null) {
+      return;
+    }
+
+    final usuario = usuarios.firstWhere(
+      (usuario) => usuario.idUsuario == idUsuario,
+    );
+    final confirmed = await _confirmProfileAction(
+      context: context,
+      title: 'Vincular cliente',
+      message: 'Este perfil vera la cuenta de ${usuario.nombreUsuario}.',
+    );
+    if (!confirmed) {
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
+
+    await _updateProfile(context, {
+      'rolPerfil': 'cliente',
+      'idUsuarioPerfil': idUsuario,
+      'idTrabajadorPerfil': FieldValue.delete(),
+    }, action: 'vincular_cliente');
+  }
+
+  Future<void> _linkTrabajador(
+    BuildContext context,
+    String? idTrabajador,
+  ) async {
+    if (idTrabajador == null) {
+      return;
+    }
+
+    final trabajador = trabajadores.firstWhere(
+      (trabajador) => trabajador.idTrabajador == idTrabajador,
+    );
+    final confirmed = await _confirmProfileAction(
+      context: context,
+      title: 'Vincular trabajador',
+      message:
+          'Este perfil podra marcar turnos como ${trabajador.nombreTrabajador}.',
+    );
+    if (!confirmed) {
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
+
+    await _updateProfile(context, {
+      'rolPerfil': 'trabajador',
+      'idTrabajadorPerfil': idTrabajador,
+      'idUsuarioPerfil': FieldValue.delete(),
+    }, action: 'vincular_trabajador');
+  }
+
+  Future<void> _updateProfile(
+    BuildContext context,
+    Map<String, dynamic> data, {
+    required String action,
+  }) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      await FirebaseFirestore.instance
+          .collection('perfiles')
+          .doc(perfilId)
+          .set(data, SetOptions(merge: true));
+      await FirebaseFirestore.instance.collection('auditoria').add({
+        'accionAuditoria': action,
+        'tipoMovimientoAuditoria': 'perfil',
+        'idMovimientoAuditoria': perfilId,
+        'emailPerfilAfectadoAuditoria': perfil['emailPerfil'] as String? ?? '',
+        'idPerfilAuditoria': user?.uid ?? '',
+        'emailPerfilAuditoria': user?.email ?? '',
+        'fechaAuditoria': FieldValue.serverTimestamp(),
+      });
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Perfil actualizado.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } on Object catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo actualizar perfil: $error'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
+class _RolePill extends StatelessWidget {
+  const _RolePill({required this.rolPerfil});
+
+  final String rolPerfil;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: KutralKoColors.gold.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        _roleLabel(rolPerfil),
+        style: const TextStyle(
+          color: KutralKoColors.carbon,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _RoleActionButton extends StatelessWidget {
+  const _RoleActionButton({
+    required this.label,
+    required this.icon,
+    required this.isSelected,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return isSelected
+        ? FilledButton.icon(
+            onPressed: null,
+            icon: Icon(icon),
+            label: Text(label),
+          )
+        : OutlinedButton.icon(
+            onPressed: onPressed,
+            icon: Icon(icon),
+            label: Text(label),
+          );
+  }
+}
+
+Future<bool> _confirmProfileAction({
+  required BuildContext context,
+  required String title,
+  required String message,
+}) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Confirmar'),
+        ),
+      ],
+    ),
+  );
+
+  return confirmed ?? false;
+}
+
+String _roleLabel(String rolPerfil) {
+  return switch (rolPerfil) {
+    'administrador' => 'Administrador',
+    'trabajador' => 'Trabajador',
+    _ => 'Cliente',
+  };
 }
 
 class _HomeView extends StatelessWidget {
@@ -1307,7 +2536,8 @@ class _ProductosView extends StatelessWidget {
           const _EmptyState(
             icon: Icons.local_dining_outlined,
             title: 'Sin productos',
-            message: 'Crea los productos de carta o barra para cargar consumos.',
+            message:
+                'Crea los productos de carta o barra para cargar consumos.',
           )
         else
           for (final producto in productos)
@@ -1721,6 +2951,630 @@ class _UsuarioBalancePanel extends StatelessWidget {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PersonalView extends StatelessWidget {
+  const _PersonalView({
+    required this.trabajadores,
+    required this.asistencias,
+    required this.consumosPersonal,
+    required this.trabajadorPerfil,
+    required this.puedeAdministrar,
+    required this.esTrabajador,
+    required this.mesLabel,
+    required this.asistenciaAbierta,
+    required this.onNuevoTrabajador,
+    required this.onRegistrarConsumo,
+    required this.onOpenTrabajador,
+    required this.onExportPdf,
+    required this.onExportExcel,
+    required this.onIniciarTurno,
+    required this.onFinalizarTurno,
+  });
+
+  final List<Trabajador> trabajadores;
+  final List<Asistencia> asistencias;
+  final List<ConsumoPersonal> consumosPersonal;
+  final Trabajador? trabajadorPerfil;
+  final bool puedeAdministrar;
+  final bool esTrabajador;
+  final String mesLabel;
+  final Asistencia? asistenciaAbierta;
+  final VoidCallback? onNuevoTrabajador;
+  final VoidCallback? onRegistrarConsumo;
+  final ValueChanged<Trabajador>? onOpenTrabajador;
+  final VoidCallback? onExportPdf;
+  final VoidCallback? onExportExcel;
+  final VoidCallback? onIniciarTurno;
+  final VoidCallback? onFinalizarTurno;
+
+  @override
+  Widget build(BuildContext context) {
+    final trabajadoresEnTurno = trabajadores.where((trabajador) {
+      return asistencias.any(
+        (asistencia) =>
+            asistencia.idTrabajador == trabajador.idTrabajador &&
+            asistencia.estaAbierta,
+      );
+    }).length;
+    final minutosTrabajados = asistencias
+        .where((asistencia) => !asistencia.estaAnuladaAsistencia)
+        .fold(0, (total, asistencia) => total + asistencia.minutosTrabajados);
+    final totalConsumos = consumosPersonal
+        .where((consumo) => !consumo.estaAnuladoConsumoPersonal)
+        .fold(0, (total, consumo) => total + consumo.montoConsumoPersonal);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      children: [
+        _SectionHeader(
+          title: puedeAdministrar ? 'Personal' : 'Mi turno',
+          action: puedeAdministrar ? 'Trabajador' : null,
+          onAction: onNuevoTrabajador,
+        ),
+        const SizedBox(height: 12),
+        if (esTrabajador)
+          _WorkerClockPanel(
+            trabajador: trabajadorPerfil,
+            asistenciaAbierta: asistenciaAbierta,
+            minutosTrabajados: minutosTrabajados,
+            totalConsumos: totalConsumos,
+            mesLabel: mesLabel,
+            onIniciarTurno: onIniciarTurno,
+            onFinalizarTurno: onFinalizarTurno,
+          )
+        else ...[
+          Row(
+            children: [
+              Expanded(
+                child: _AdminMetricCard(
+                  label: 'Activos',
+                  value: trabajadores.length.toString(),
+                  icon: Icons.groups_rounded,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _AdminMetricCard(
+                  label: 'En turno',
+                  value: trabajadoresEnTurno.toString(),
+                  icon: Icons.timer_rounded,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _AdminMetricCard(
+                  label: 'Horas mes',
+                  value: _formatMinutes(minutosTrabajados),
+                  icon: Icons.schedule_rounded,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _AdminMetricCard(
+                  label: 'Consumo',
+                  value: CurrencyFormatter.clp(totalConsumos),
+                  icon: Icons.restaurant_rounded,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: onRegistrarConsumo,
+                  icon: const Icon(Icons.add_shopping_cart_rounded),
+                  label: const Text('Consumo personal'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onExportPdf,
+                  icon: const Icon(Icons.picture_as_pdf_rounded),
+                  label: const Text('PDF'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onExportExcel,
+                  icon: const Icon(Icons.table_chart_rounded),
+                  label: const Text('Excel'),
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 20),
+        _SectionHeader(title: puedeAdministrar ? 'Equipo' : 'Historial'),
+        const SizedBox(height: 12),
+        if (puedeAdministrar && trabajadores.isEmpty)
+          const _EmptyState(
+            icon: Icons.badge_outlined,
+            title: 'Sin trabajadores',
+            message: 'Crea el primer trabajador para controlar asistencia.',
+          )
+        else if (puedeAdministrar)
+          for (final trabajador in trabajadores)
+            _TrabajadorTile(
+              trabajador: trabajador,
+              onOpen: onOpenTrabajador == null
+                  ? null
+                  : () => onOpenTrabajador!(trabajador),
+              asistenciaAbierta: _findAsistenciaAbierta(
+                asistencias,
+                trabajador.idTrabajador,
+              ),
+              consumoMes: _totalConsumoTrabajador(
+                consumosPersonal,
+                trabajador.idTrabajador,
+              ),
+              minutosMes: _totalMinutosTrabajador(
+                asistencias,
+                trabajador.idTrabajador,
+              ),
+            )
+        else
+          _PersonalHistory(
+            asistencias: asistencias,
+            consumosPersonal: consumosPersonal,
+          ),
+      ],
+    );
+  }
+
+  static Asistencia? _findAsistenciaAbierta(
+    List<Asistencia> asistencias,
+    String idTrabajador,
+  ) {
+    for (final asistencia in asistencias) {
+      if (asistencia.idTrabajador == idTrabajador && asistencia.estaAbierta) {
+        return asistencia;
+      }
+    }
+    return null;
+  }
+
+  static int _totalConsumoTrabajador(
+    List<ConsumoPersonal> consumos,
+    String idTrabajador,
+  ) {
+    return consumos
+        .where(
+          (consumo) =>
+              consumo.idTrabajador == idTrabajador &&
+              !consumo.estaAnuladoConsumoPersonal,
+        )
+        .fold(0, (total, consumo) => total + consumo.montoConsumoPersonal);
+  }
+
+  static int _totalMinutosTrabajador(
+    List<Asistencia> asistencias,
+    String idTrabajador,
+  ) {
+    return asistencias
+        .where(
+          (asistencia) =>
+              asistencia.idTrabajador == idTrabajador &&
+              !asistencia.estaAnuladaAsistencia,
+        )
+        .fold(0, (total, asistencia) => total + asistencia.minutosTrabajados);
+  }
+}
+
+class _WorkerClockPanel extends StatelessWidget {
+  const _WorkerClockPanel({
+    required this.trabajador,
+    required this.asistenciaAbierta,
+    required this.minutosTrabajados,
+    required this.totalConsumos,
+    required this.mesLabel,
+    required this.onIniciarTurno,
+    required this.onFinalizarTurno,
+  });
+
+  final Trabajador? trabajador;
+  final Asistencia? asistenciaAbierta;
+  final int minutosTrabajados;
+  final int totalConsumos;
+  final String mesLabel;
+  final VoidCallback? onIniciarTurno;
+  final VoidCallback? onFinalizarTurno;
+
+  @override
+  Widget build(BuildContext context) {
+    final isLinked = trabajador != null;
+    final isWorking = asistenciaAbierta != null;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              isWorking ? 'En turno' : 'Fuera de turno',
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              isLinked
+                  ? '${trabajador!.nombreTrabajador} · $mesLabel'
+                  : 'Tu perfil aun no esta vinculado a trabajador.',
+              style: const TextStyle(
+                color: KutralKoColors.muted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: _AdminMetricCard(
+                    label: 'Horas',
+                    value: _formatMinutes(minutosTrabajados),
+                    icon: Icons.schedule_rounded,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _AdminMetricCard(
+                    label: 'Descuento',
+                    value: CurrencyFormatter.clp(totalConsumos),
+                    icon: Icons.payments_rounded,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: isLinked && !isWorking ? onIniciarTurno : null,
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: const Text('Iniciar turno'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: isLinked && isWorking ? onFinalizarTurno : null,
+                    icon: const Icon(Icons.stop_rounded),
+                    label: const Text('Finalizar'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminMetricCard extends StatelessWidget {
+  const _AdminMetricCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: KutralKoColors.gold),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              style: const TextStyle(
+                color: KutralKoColors.muted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TrabajadorTile extends StatelessWidget {
+  const _TrabajadorTile({
+    required this.trabajador,
+    required this.onOpen,
+    required this.asistenciaAbierta,
+    required this.consumoMes,
+    required this.minutosMes,
+  });
+
+  final Trabajador trabajador;
+  final VoidCallback? onOpen;
+  final Asistencia? asistenciaAbierta;
+  final int consumoMes;
+  final int minutosMes;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        onTap: onOpen,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: CircleAvatar(
+          backgroundColor: asistenciaAbierta == null
+              ? KutralKoColors.smoke
+              : KutralKoColors.gold.withValues(alpha: 0.28),
+          foregroundColor: KutralKoColors.carbon,
+          child: Icon(
+            asistenciaAbierta == null
+                ? Icons.person_rounded
+                : Icons.timer_rounded,
+          ),
+        ),
+        title: Text(
+          trabajador.nombreTrabajador,
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+        subtitle: Text(
+          '${trabajador.cargoTrabajador} · ${asistenciaAbierta == null ? 'Fuera de turno' : 'En turno'}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              _formatMinutes(minutosMes),
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            Text(
+              CurrencyFormatter.clp(consumoMes),
+              style: const TextStyle(
+                color: KutralKoColors.ember,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PersonalHistory extends StatelessWidget {
+  const _PersonalHistory({
+    required this.asistencias,
+    required this.consumosPersonal,
+  });
+
+  final List<Asistencia> asistencias;
+  final List<ConsumoPersonal> consumosPersonal;
+
+  @override
+  Widget build(BuildContext context) {
+    if (asistencias.isEmpty && consumosPersonal.isEmpty) {
+      return const _EmptyState(
+        icon: Icons.history_rounded,
+        title: 'Sin registros',
+        message: 'Tus horas y consumos apareceran aqui.',
+      );
+    }
+
+    return Column(
+      children: [
+        for (final asistencia in asistencias)
+          _MovementRow(
+            icon: Icons.schedule_rounded,
+            title: asistencia.estaAbierta ? 'Turno en curso' : 'Turno cerrado',
+            detail: _formatDate(asistencia.fechaAsistencia),
+            amount: _formatMinutes(asistencia.minutosTrabajados),
+            color: KutralKoColors.teal,
+            isAnulado: asistencia.estaAnuladaAsistencia,
+            onAnular: null,
+            onEditar: null,
+          ),
+        for (final consumo in consumosPersonal)
+          _MovementRow(
+            icon: Icons.restaurant_rounded,
+            title: consumo.nombreProductoSnapshot,
+            detail: _formatDate(consumo.fechaConsumoPersonal),
+            amount: CurrencyFormatter.clp(consumo.montoConsumoPersonal),
+            color: KutralKoColors.orange,
+            isAnulado: consumo.estaAnuladoConsumoPersonal,
+            onAnular: null,
+            onEditar: null,
+          ),
+      ],
+    );
+  }
+}
+
+class _TrabajadorDetailSheet extends StatelessWidget {
+  const _TrabajadorDetailSheet({
+    required this.trabajador,
+    required this.asistencias,
+    required this.consumosPersonal,
+    required this.asistenciaAbierta,
+    required this.onEditarTrabajador,
+    required this.onEditarAsistencia,
+    required this.onAnularConsumoPersonal,
+  });
+
+  final Trabajador trabajador;
+  final List<Asistencia> asistencias;
+  final List<ConsumoPersonal> consumosPersonal;
+  final Asistencia? asistenciaAbierta;
+  final VoidCallback onEditarTrabajador;
+  final ValueChanged<Asistencia> onEditarAsistencia;
+  final ValueChanged<ConsumoPersonal> onAnularConsumoPersonal;
+
+  @override
+  Widget build(BuildContext context) {
+    final minutosTrabajados = asistencias
+        .where((asistencia) => !asistencia.estaAnuladaAsistencia)
+        .fold(0, (total, asistencia) => total + asistencia.minutosTrabajados);
+    final minutosExtra = asistencias
+        .where((asistencia) => !asistencia.estaAnuladaAsistencia)
+        .fold(0, (total, asistencia) => total + asistencia.minutosExtra);
+    final atrasos = asistencias
+        .where(
+          (asistencia) =>
+              !asistencia.estaAnuladaAsistencia && asistencia.minutosAtraso > 0,
+        )
+        .length;
+    final totalConsumos = consumosPersonal
+        .where((consumo) => !consumo.estaAnuladoConsumoPersonal)
+        .fold(0, (total, consumo) => total + consumo.montoConsumoPersonal);
+
+    return _FormScaffold(
+      title: trabajador.nombreTrabajador,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _AdminMetricCard(
+                  label: 'Horas',
+                  value: _formatMinutes(minutosTrabajados),
+                  icon: Icons.schedule_rounded,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _AdminMetricCard(
+                  label: 'Descuento',
+                  value: CurrencyFormatter.clp(totalConsumos),
+                  icon: Icons.payments_rounded,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _AdminMetricCard(
+                  label: 'Extras',
+                  value: _formatMinutes(minutosExtra),
+                  icon: Icons.more_time_rounded,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _AdminMetricCard(
+                  label: 'Atrasos',
+                  value: atrasos.toString(),
+                  icon: Icons.alarm_rounded,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: Icon(
+                asistenciaAbierta == null
+                    ? Icons.timer_off_rounded
+                    : Icons.timer_rounded,
+                color: KutralKoColors.gold,
+              ),
+              title: Text(
+                asistenciaAbierta == null ? 'Fuera de turno' : 'En turno',
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: Text(
+                '${trabajador.cargoTrabajador} · ${trabajador.emailTrabajador.isEmpty ? 'sin correo' : trabajador.emailTrabajador}',
+              ),
+              trailing: IconButton(
+                tooltip: 'Editar trabajador',
+                onPressed: onEditarTrabajador,
+                icon: const Icon(Icons.edit_rounded),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          const _SectionHeader(title: 'Asistencia'),
+          const SizedBox(height: 10),
+          if (asistencias.isEmpty)
+            const _EmptyState(
+              icon: Icons.schedule_rounded,
+              title: 'Sin asistencias',
+              message: 'Los turnos marcados apareceran aqui.',
+            )
+          else
+            for (final asistencia in asistencias)
+              _MovementRow(
+                icon: asistencia.estaAbierta
+                    ? Icons.play_circle_rounded
+                    : Icons.check_circle_rounded,
+                title: asistencia.estaAbierta
+                    ? 'Turno en curso'
+                    : 'Turno cerrado',
+                detail:
+                    '${_formatDate(asistencia.fechaAsistencia)} · ${asistencia.observacionAsistencia.isEmpty ? 'Sin observacion' : asistencia.observacionAsistencia}',
+                amount: _formatMinutes(asistencia.minutosTrabajados),
+                color: KutralKoColors.teal,
+                isAnulado: asistencia.estaAnuladaAsistencia,
+                onEditar: () => onEditarAsistencia(asistencia),
+                onAnular: null,
+              ),
+          const SizedBox(height: 18),
+          const _SectionHeader(title: 'Consumos internos'),
+          const SizedBox(height: 10),
+          if (consumosPersonal.isEmpty)
+            const _EmptyState(
+              icon: Icons.restaurant_rounded,
+              title: 'Sin consumos',
+              message: 'Los consumos internos apareceran aqui.',
+            )
+          else
+            for (final consumo in consumosPersonal)
+              _MovementRow(
+                icon: Icons.restaurant_rounded,
+                title: consumo.nombreProductoSnapshot,
+                detail:
+                    '${_formatDate(consumo.fechaConsumoPersonal)} · ${consumo.notaConsumoPersonal.isEmpty ? 'Sin nota' : consumo.notaConsumoPersonal}',
+                amount: CurrencyFormatter.clp(consumo.montoConsumoPersonal),
+                color: KutralKoColors.orange,
+                isAnulado: consumo.estaAnuladoConsumoPersonal,
+                onEditar: null,
+                onAnular: consumo.estaAnuladoConsumoPersonal
+                    ? null
+                    : () => onAnularConsumoPersonal(consumo),
+              ),
         ],
       ),
     );
@@ -2321,6 +4175,405 @@ class _ProductoFormSheetState extends State<_ProductoFormSheet> {
   }
 }
 
+class _TrabajadorFormSheet extends StatefulWidget {
+  const _TrabajadorFormSheet({this.trabajador});
+
+  final Trabajador? trabajador;
+
+  @override
+  State<_TrabajadorFormSheet> createState() => _TrabajadorFormSheetState();
+}
+
+class _TrabajadorFormSheetState extends State<_TrabajadorFormSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nombreController;
+  late final TextEditingController _emailController;
+  late final TextEditingController _telefonoController;
+  late final TextEditingController _cargoController;
+  late final TextEditingController _idPerfilController;
+  late bool _estaActivoTrabajador;
+
+  @override
+  void initState() {
+    super.initState();
+    final trabajador = widget.trabajador;
+    _nombreController = TextEditingController(
+      text: trabajador?.nombreTrabajador ?? '',
+    );
+    _emailController = TextEditingController(
+      text: trabajador?.emailTrabajador ?? '',
+    );
+    _telefonoController = TextEditingController(
+      text: trabajador?.telefonoTrabajador ?? '',
+    );
+    _cargoController = TextEditingController(
+      text: trabajador?.cargoTrabajador ?? '',
+    );
+    _idPerfilController = TextEditingController(
+      text: trabajador?.idPerfil ?? '',
+    );
+    _estaActivoTrabajador = trabajador?.estaActivoTrabajador ?? true;
+  }
+
+  @override
+  void dispose() {
+    _nombreController.dispose();
+    _emailController.dispose();
+    _telefonoController.dispose();
+    _cargoController.dispose();
+    _idPerfilController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    Navigator.of(context).pop(
+      Trabajador(
+        idTrabajador: widget.trabajador?.idTrabajador ?? '',
+        nombreTrabajador: _nombreController.text.trim(),
+        emailTrabajador: _emailController.text.trim(),
+        telefonoTrabajador: _telefonoController.text.trim(),
+        cargoTrabajador: _cargoController.text.trim(),
+        estaActivoTrabajador: _estaActivoTrabajador,
+        idPerfil: _idPerfilController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _FormScaffold(
+      title: widget.trabajador == null
+          ? 'Nuevo trabajador'
+          : 'Editar trabajador',
+      child: Form(
+        key: _formKey,
+        child: Column(
+          children: [
+            TextFormField(
+              controller: _nombreController,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del trabajador',
+                hintText: 'Ingrese nombre y apellido',
+                prefixIcon: Icon(Icons.badge_rounded),
+              ),
+              textInputAction: TextInputAction.next,
+              validator: _requiredValidator,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _emailController,
+              decoration: const InputDecoration(
+                labelText: 'Correo',
+                hintText: 'correo@ejemplo.cl',
+                prefixIcon: Icon(Icons.mail_rounded),
+              ),
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _telefonoController,
+              decoration: const InputDecoration(
+                labelText: 'Telefono',
+                prefixIcon: Icon(Icons.phone_rounded),
+              ),
+              keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _cargoController,
+              decoration: const InputDecoration(
+                labelText: 'Cargo',
+                hintText: 'Ej: Garzon, cocina, barra',
+                prefixIcon: Icon(Icons.work_rounded),
+              ),
+              textInputAction: TextInputAction.next,
+              validator: _requiredValidator,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _idPerfilController,
+              decoration: const InputDecoration(
+                labelText: 'ID perfil Firebase',
+                hintText: 'Opcional para vincular login trabajador',
+                prefixIcon: Icon(Icons.link_rounded),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              value: _estaActivoTrabajador,
+              onChanged: (value) =>
+                  setState(() => _estaActivoTrabajador = value),
+              title: const Text('Trabajador activo'),
+              contentPadding: EdgeInsets.zero,
+            ),
+            const SizedBox(height: 12),
+            _SubmitButton(onPressed: _submit),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConsumoPersonalFormSheet extends StatefulWidget {
+  const _ConsumoPersonalFormSheet({
+    required this.trabajadores,
+    required this.productos,
+  });
+
+  final List<Trabajador> trabajadores;
+  final List<Producto> productos;
+
+  @override
+  State<_ConsumoPersonalFormSheet> createState() =>
+      _ConsumoPersonalFormSheetState();
+}
+
+class _ConsumoPersonalFormSheetState extends State<_ConsumoPersonalFormSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _montoController = TextEditingController();
+  final _notaController = TextEditingController();
+  late Trabajador _trabajador;
+  late Producto _producto;
+
+  @override
+  void initState() {
+    super.initState();
+    _trabajador = widget.trabajadores.first;
+    _producto = widget.productos.first;
+    _montoController.text = _producto.precioProducto.toString();
+  }
+
+  @override
+  void dispose() {
+    _montoController.dispose();
+    _notaController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    Navigator.of(context).pop(
+      ConsumoPersonal(
+        idConsumoPersonal: '',
+        idTrabajador: _trabajador.idTrabajador,
+        idProducto: _producto.idProducto,
+        nombreProductoSnapshot: _producto.nombreProducto,
+        montoConsumoPersonal: int.parse(_montoController.text.trim()),
+        fechaConsumoPersonal: DateTime.now(),
+        notaConsumoPersonal: _notaController.text.trim(),
+        estaAnuladoConsumoPersonal: false,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _FormScaffold(
+      title: 'Consumo personal',
+      child: Form(
+        key: _formKey,
+        child: Column(
+          children: [
+            DropdownButtonFormField<Trabajador>(
+              initialValue: _trabajador,
+              decoration: const InputDecoration(labelText: 'Trabajador'),
+              items: [
+                for (final trabajador in widget.trabajadores)
+                  DropdownMenuItem(
+                    value: trabajador,
+                    child: Text(trabajador.nombreTrabajador),
+                  ),
+              ],
+              onChanged: (value) => setState(() => _trabajador = value!),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<Producto>(
+              initialValue: _producto,
+              decoration: const InputDecoration(labelText: 'Producto'),
+              items: [
+                for (final producto in widget.productos)
+                  DropdownMenuItem(
+                    value: producto,
+                    child: Text(producto.nombreProducto),
+                  ),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _producto = value!;
+                  _montoController.text = _producto.precioProducto.toString();
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _montoController,
+              decoration: const InputDecoration(
+                labelText: 'Valor a descontar',
+                hintText: 'Ej: 3500',
+                prefixIcon: Icon(Icons.payments_rounded),
+              ),
+              keyboardType: TextInputType.number,
+              validator: _positiveNumberValidator,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _notaController,
+              decoration: const InputDecoration(
+                labelText: 'Nota',
+                hintText: 'Opcional',
+                prefixIcon: Icon(Icons.notes_rounded),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _SubmitButton(onPressed: _submit),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AsistenciaEditFormSheet extends StatefulWidget {
+  const _AsistenciaEditFormSheet({required this.asistencia});
+
+  final Asistencia asistencia;
+
+  @override
+  State<_AsistenciaEditFormSheet> createState() =>
+      _AsistenciaEditFormSheetState();
+}
+
+class _AsistenciaEditFormSheetState extends State<_AsistenciaEditFormSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _minutosTrabajadosController;
+  late final TextEditingController _minutosExtraController;
+  late final TextEditingController _minutosAtrasoController;
+  late final TextEditingController _observacionController;
+  late bool _estaAnuladaAsistencia;
+
+  @override
+  void initState() {
+    super.initState();
+    final asistencia = widget.asistencia;
+    _minutosTrabajadosController = TextEditingController(
+      text: asistencia.minutosTrabajados.toString(),
+    );
+    _minutosExtraController = TextEditingController(
+      text: asistencia.minutosExtra.toString(),
+    );
+    _minutosAtrasoController = TextEditingController(
+      text: asistencia.minutosAtraso.toString(),
+    );
+    _observacionController = TextEditingController(
+      text: asistencia.observacionAsistencia,
+    );
+    _estaAnuladaAsistencia = asistencia.estaAnuladaAsistencia;
+  }
+
+  @override
+  void dispose() {
+    _minutosTrabajadosController.dispose();
+    _minutosExtraController.dispose();
+    _minutosAtrasoController.dispose();
+    _observacionController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    Navigator.of(context).pop(
+      widget.asistencia.copyWith(
+        minutosTrabajados: int.parse(_minutosTrabajadosController.text.trim()),
+        minutosExtra: int.parse(_minutosExtraController.text.trim()),
+        minutosAtraso: int.parse(_minutosAtrasoController.text.trim()),
+        observacionAsistencia: _observacionController.text.trim(),
+        estaCorregidaAsistencia: true,
+        estaAnuladaAsistencia: _estaAnuladaAsistencia,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _FormScaffold(
+      title: 'Corregir asistencia',
+      child: Form(
+        key: _formKey,
+        child: Column(
+          children: [
+            TextFormField(
+              controller: _minutosTrabajadosController,
+              decoration: const InputDecoration(
+                labelText: 'Minutos trabajados',
+                hintText: 'Ej: 480',
+                prefixIcon: Icon(Icons.schedule_rounded),
+              ),
+              keyboardType: TextInputType.number,
+              validator: _nonNegativeNumberValidator,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _minutosExtraController,
+              decoration: const InputDecoration(
+                labelText: 'Minutos extra',
+                hintText: 'Ej: 30',
+                prefixIcon: Icon(Icons.more_time_rounded),
+              ),
+              keyboardType: TextInputType.number,
+              validator: _nonNegativeNumberValidator,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _minutosAtrasoController,
+              decoration: const InputDecoration(
+                labelText: 'Minutos atraso',
+                hintText: 'Ej: 10',
+                prefixIcon: Icon(Icons.alarm_rounded),
+              ),
+              keyboardType: TextInputType.number,
+              validator: _nonNegativeNumberValidator,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _observacionController,
+              decoration: const InputDecoration(
+                labelText: 'Observacion',
+                hintText: 'Motivo de la correccion',
+                prefixIcon: Icon(Icons.notes_rounded),
+              ),
+              minLines: 2,
+              maxLines: 3,
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              value: _estaAnuladaAsistencia,
+              onChanged: (value) =>
+                  setState(() => _estaAnuladaAsistencia = value),
+              title: const Text('Anular asistencia'),
+              contentPadding: EdgeInsets.zero,
+            ),
+            const SizedBox(height: 12),
+            _SubmitButton(onPressed: _submit),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ConsumoEditFormSheet extends StatefulWidget {
   const _ConsumoEditFormSheet({
     required this.consumo,
@@ -2653,10 +4906,7 @@ class _ConsumoFormSheetState extends State<_ConsumoFormSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            _SubmitButton(
-              onPressed: _submit,
-              label: 'Guardar carga',
-            ),
+            _SubmitButton(onPressed: _submit, label: 'Guardar carga'),
           ],
         ),
       ),
@@ -3131,6 +5381,25 @@ String? _positiveNumberValidator(String? value) {
     return 'Ingresa un numero mayor a cero';
   }
   return null;
+}
+
+String? _nonNegativeNumberValidator(String? value) {
+  final number = int.tryParse(value?.trim() ?? '');
+  if (number == null || number < 0) {
+    return 'Ingresa un numero igual o mayor a cero';
+  }
+  return null;
+}
+
+String _formatMinutes(int minutes) {
+  final safeMinutes = minutes < 0 ? 0 : minutes;
+  final hours = safeMinutes ~/ 60;
+  final remainingMinutes = safeMinutes % 60;
+  return '${hours}h ${remainingMinutes.toString().padLeft(2, '0')}m';
+}
+
+String _formatDate(DateTime date) {
+  return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
 }
 
 String _monthLabel(DateTime date) {

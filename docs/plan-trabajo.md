@@ -5,6 +5,11 @@
 Estamos en la base inicial de la app movil. Ya existe un proyecto Flutter fuente con interfaz inicial, entidades de dominio, datos mock, paleta visual basada en el logo y pruebas basicas.
 Actualizacion 2026-06-03: la app ya arranca sin datos mock para permitir carga real desde UI. La capa Firebase/Firestore ya esta preparada en codigo y `android/app/google-services.json` fue agregado desde el proyecto Firebase real.
 Actualizacion 2026-06-05: se inicio pulido de producto con lenguaje visible menos tecnico, estetica mas negra/dorada y flujo de "Nueva carga" para agregar varios productos a un mismo cliente antes de guardar. La vista de movimientos ahora muestra nombres de cliente y mezcla consumos/pagos por fecha. Los clientes ya abren un detalle con resumen, historial propio y acciones rapidas preseleccionadas. Se agrego anulacion de consumos/pagos con confirmacion, manteniendo trazabilidad y recalculo de saldos. Luego se reemplazo el selector local por roles reales desde `perfiles/{uid}`, se agrego filtro mensual, edicion de consumos/pagos, reglas Firestore versionadas, indices para consultas por cliente, auditoria basica y vinculacion admin de perfil-cliente.
+Actualizacion 2026-06-08: se inicio panel web usando el mismo proyecto Flutter/Firebase. Se genero runner `web/`, branding web y navegacion lateral responsive para pantallas anchas, manteniendo bottom navigation en movil. El panel conserva diferenciacion de responsabilidades: administrador administra clientes/carta/cargas/pagos/permisos; cliente revisa su cuenta e historial vinculado.
+Actualizacion 2026-06-08 tarde: se inicio MVP de Personal Interno con modelos `Trabajador`, `Asistencia` y `ConsumoPersonal`; repositorio Firestore; reglas/indices; seccion "Personal" en mobile/web; alta de trabajadores; registro admin de consumo interno; y acciones trabajador para iniciar/finalizar turno.
+Actualizacion 2026-06-08 noche: se agrego ficha individual de trabajador para admin, con resumen mensual, estado de turno, historial de asistencias, historial de consumos internos, correccion de asistencia y anulacion de consumos internos con auditoria.
+Actualizacion 2026-06-09: se agrego exportacion de reporte mensual de personal en PDF y Excel desde la seccion Personal del panel web.
+Actualizacion 2026-06-09 perfiles: la configuracion admin ahora agrupa perfiles en sin vincular, administradores, trabajadores y clientes; agrega acciones amigables para cambiar rol, vincular cliente/trabajador, confirmaciones y auditoria.
 
 Repositorio local activo:
 
@@ -19,6 +24,9 @@ Estado Git actual:
 ## Objetivo Del Producto
 
 Construir una aplicacion movil premium para restobares que permita administrar cuentas mensuales de clientes o convenios internos.
+El producto se expande hacia una plataforma interna de operacion para Kutral Ko,
+manteniendo el modulo original de cuentas/consumos de clientes y sumando gestion
+de personal, asistencia y consumos internos.
 
 La app debe permitir:
 
@@ -30,7 +38,11 @@ La app debe permitir:
 - Anular movimientos sin perder trazabilidad.
 - Usar perfiles diferenciados: administrador/dueño del bar y cliente.
 - Compartir una fuente de verdad entre administrador y cliente.
+- Controlar horarios y asistencia del personal.
+- Controlar consumos internos del personal.
+- Generar reportes mensuales para remuneraciones/descuentos.
 - Prepararse para un futuro panel administrativo vendible.
+- Usar un panel web conectado a la misma fuente de verdad.
 
 ## Reglas De Arquitectura
 
@@ -39,6 +51,7 @@ La app debe permitir:
 - No borrar informacion critica: preferir estados como activo/anulado.
 - Saldos calculados desde movimientos, no guardados como fuente principal.
 - Separar features por dominio: usuarios, productos, consumos, pagos, dashboard, configuracion.
+- Separar tambien dominios internos: trabajadores, turnos, asistencias, consumos del personal, reportes.
 - Mantener UI premium, sobria y rapida para uso diario en local.
 - Formato monetario chileno: `$` a la izquierda y separador de miles con punto.
 - En UI visible, usar lenguaje humano y operativo; reservar nombres tecnicos como `nombreProducto` o `idUsuario` para codigo, Firestore y documentacion tecnica.
@@ -60,7 +73,7 @@ Incluye:
 
 Pendiente de esta iteracion:
 
-- Generar runners reales de Flutter: `android/` creado; `ios/` y `web/` pendientes.
+- Generar runners reales de Flutter: `android/` y `web/` creados; `ios/` pendiente.
 - Crear primer commit Git. Hecho: `1083c2c chore: estado base inicial`.
 - Definir si el nombre de carpeta queda como `kutral_ko` o si usamos otro nombre comercial.
 - Branding Android: icono launcher y splash screen usando logo Kutral Ko. Hecho inicial.
@@ -234,7 +247,7 @@ Criterio de exito:
 
 ## Iteracion 8 - Preparacion Panel Admin
 
-Estado: futuro.
+Estado: en progreso.
 
 Objetivo: preparar venta como sistema para locales.
 
@@ -242,6 +255,8 @@ Tareas futuras:
 
 - Backend.
 - Panel web administrativo.
+- Panel web administrativo. Hecho inicial: runner web, branding y navegacion lateral responsive.
+- Modulo personal interno: futuro inmediato.
 - Multi-local.
 - Roles y permisos.
 - Reportes.
@@ -258,3 +273,47 @@ Antes de seguir desarrollando conviene resolver:
 3. Definir y aplicar reglas Firestore para perfiles administrador/cliente.
 4. Definir nombre comercial/carpeta.
 5. Continuar Iteracion 2 con detalle de usuario, anulaciones editables y preparacion para repositorios.
+
+## Iteracion 9 - Personal Interno
+
+Estado: propuesta prioritaria.
+
+Objetivo: integrar control de horarios y consumos internos del personal sin
+romper el modulo actual de cuentas de clientes.
+
+Documento base:
+
+- `docs/requisitos-personal.md`
+
+Modulos:
+
+- Trabajadores.
+- Turnos programados.
+- Asistencias.
+- Consumos del personal.
+- Dashboard administrativo de personal.
+- Vista trabajador de solo lectura/acciones permitidas.
+- Reporte mensual para remuneraciones.
+
+Roles:
+
+- `administrador`: crea turnos, corrige asistencia, registra consumos, genera reportes y gestiona personal.
+- `trabajador`: marca entrada/salida y consulta horas/consumos/descuentos propios.
+- `cliente`: mantiene acceso de cuenta mensual vinculada actual.
+
+Colecciones Firestore propuestas:
+
+- `trabajadores`
+- `turnosProgramados`
+- `asistencias`
+- `consumosPersonal`
+- `cierresPersonal`
+
+Criterio de exito MVP:
+
+- Un trabajador puede iniciar y finalizar turno.
+- El administrador puede ver quien esta en turno. Hecho inicial.
+- El administrador puede registrar consumo interno a un trabajador. Hecho inicial.
+- El trabajador ve sus consumos y descuentos estimados. Hecho inicial.
+- El administrador puede generar un resumen mensual por trabajador. Hecho inicial en ficha individual.
+- El administrador puede exportar reporte mensual para remuneraciones en PDF y Excel. Hecho inicial.
